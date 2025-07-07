@@ -1,6 +1,6 @@
 from enum import Enum
 from datetime import date
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel, Field, HttpUrl
 
 class ProviderType(str, Enum):
@@ -87,17 +87,38 @@ class Scholarship(BaseModel):
 
 # 이 파일은 다른 파일에서 import하여 사용됩니다.
 if __name__ == "__main__":
-    # 샘플 데이터
-    sample_data = {
-        "title": "기본 장학금",
-        "provider": "기본 재단",
-        "amount": 1000000,
-        "end_date": "2025-09-30"
-    }
+    import sys
+    import os
     
-    # 샘플 데이터로 모델 인스턴스 생성
-    scholarship_instance = Scholarship(**sample_data)
+    # 현재 파일의 경로를 기준으로 프로젝트 루트 경로를 계산하여 sys.path에 추가
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    sys.path.append(project_root)
     
-    # 생성된 인스턴스 출력
-    print("Pydantic 모델 테스트 성공:")
-    print(scholarship_instance)
+    from scripts.ingest.openapi_collector import collect_data
+    import logging
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    logger.info("API로부터 실제 데이터를 가져와 테스트를 시작합니다...")
+    
+    # 데이터 수집 함수 호출
+    raw_scholarship_list = collect_data(page=1) 
+
+    # 첫 번째 항목으로 테스트
+    if raw_scholarship_list:
+        logger.info(f"총 {len(raw_scholarship_list)}개의 데이터를 받아왔습니다. 첫 번째 항목으로 검증을 시도합니다.")
+        first_item = raw_scholarship_list[0]
+        
+        try:
+            # Pydantic 모델 검증
+            scholarship_instance = Scholarship.model_validate(first_item)
+            
+            logger.info("Pydantic 모델 실제 데이터 검증 성공!")
+            # 검증된 데이터 JSON 형태로 출력
+            print(scholarship_instance.model_dump_json(indent=2, by_alias=True))
+
+        except Exception as e:
+            logger.error(f" Pydantic 모델 실제 데이터 검증 실패:\n{e}")
+    else:
+        logger.error("API로부터 데이터를 가져오는 데 실패했습니다.")
