@@ -1,21 +1,3 @@
----
-name: Issue Template
-about: 이슈 템플릿
-title: ''
-labels: ''
-assignees: Yooonjeong
-
----
-
----
-name: Issue Template
-about: 이슈 템플릿
-title: "[Feat] "
-labels: ''
-assignees: ''
-
----
-
 ## 💼 작업 설명
 <!-- 진행할 작업에 대해 간단하게 설명해주세요 -->
 
