@@ -1,7 +1,9 @@
 from typing   import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class IncomeCriterion(BaseModel):
+    model_config = ConfigDict(from_attributes=True, use_enum_values=True)
+
     scholarship_id: int = Field(..., description="Scholarship ID(FK)")
 
     # --- 장학금 소득 기준 값들 ---
@@ -18,7 +20,4 @@ class IncomeCriterion(BaseModel):
     low_income:           bool = Field(False, description="저소득층 대상 여부")
     multicultural:        bool = Field(False, description="다문화 가정 대상 여부")
     north_korean_defector: bool = Field(False, description="북한이탈주민 대상 여부")
-
-    class Config:
-        orm_mode = True
-        use_enum_values = True
+    

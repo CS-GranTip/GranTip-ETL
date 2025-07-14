@@ -1,7 +1,17 @@
 import logging
 from typing import List
-from models import Scholarship, GradeCriterion, IncomeCriterion
+from pathlib import Path
+import sys
+
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.append(str(project_root))
+
+from models.scholarship import Scholarship  # scholarship.py의 함수 이름으로 교체
+from models.criterion.grade_criterion import GradeCriterion  # grade_criterion.py의 함수
+from models.criterion.income_criterion import IncomeCriterion  # income_criterion.py의 함수
 from enums import ScholarshipCategory, GradeCriterionType
+
+
 
 # 로거 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -69,11 +79,11 @@ def _validate_category_and_criteria_existence(
 
 def _validate_recipient_numbers(scholarship: Scholarship) -> bool:
     """총 선발인원과 구분별 선발인원의 합계가 일치하는지 검증합니다."""
-    if scholarship.num_of_recipients_total is not None and scholarship.recipients_by_category:
-        sum_of_categorized = sum(scholarship.recipients_by_category.values())
-        if scholarship.num_of_recipients_total != sum_of_categorized:
+    if scholarship.num_of_recipient_total is not None and scholarship.recipient_by_category:
+        sum_of_categorized = sum(scholarship.recipient_by_category.values())
+        if scholarship.num_of_recipient_total != sum_of_categorized:
             logger.info(
-                f"ID {scholarship.id}: 총 선발인원({scholarship.num_of_recipients_total})과 "
+                f"ID {scholarship.id}: 총 선발인원({scholarship.num_of_recipient_total})과 "
                 f"구분별 인원 합계({sum_of_categorized})가 불일치합니다."
             )
             # 심각한 오류는 아니므로 True를 반환하고 로그만 남김

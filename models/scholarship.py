@@ -1,14 +1,17 @@
 from datetime import date
 from typing     import Optional, List, Dict
-from pydantic   import BaseModel, Field, HttpUrl
+from pydantic   import BaseModel, Field, HttpUrl, ConfigDict
 from enums      import (
     ProviderType,
     ProductType,
     ScholarshipCategory
 )
-from models import GradeCriterion, IncomeCriterion
+from models.criterion.grade_criterion import GradeCriterion
+from models.criterion.income_criterion import IncomeCriterion
 
 class Scholarship(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra='ignore', use_enum_values=True)
+
     # --- 필수 정보 ---
     id: int                     = Field(..., alias="번호")
     product_name: str           = Field(..., alias="상품명")
@@ -67,8 +70,3 @@ class Scholarship(BaseModel):
     qualification_restriction_notes: Optional[str] = Field(None, description="자격제한 전체 비고")
     recommendation_needed_notes: Optional[str] = Field(None, description="추천필요여부 전체 비고")
     required_documents_notes: Optional[str] = Field(None, description="제출서류 전체 비고")
-
-    class Config:
-        populate_by_name = True
-        extra            = 'ignore'
-        use_enum_values  = True

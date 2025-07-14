@@ -1,8 +1,16 @@
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+
+from pathlib import Path
+import sys
+project_root = Path(__file__).resolve().parent.parent.parent
+sys.path.append(str(project_root))
+
 from enums import GradeCriterionType, ThresholdDirection
 
 class GradeCriterion(BaseModel):
+    model_config = ConfigDict(from_attributes=True, use_enum_values=True)
+
     scholarship_id: int = Field(..., description="Scholarship ID(FK)")
     group: str = Field(..., description="대상 그룹 (예: '신입생', '재학생')")
     type: GradeCriterionType = Field(..., description="기준 종류")
@@ -18,7 +26,3 @@ class GradeCriterion(BaseModel):
         ThresholdDirection.NONE, description="기준 방향"
     )
     description: Optional[str]    = Field(None, description="원본 텍스트")
-
-    class Config:
-        orm_mode = True
-        use_enum_values = True
