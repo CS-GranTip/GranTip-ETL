@@ -87,6 +87,12 @@ def transform_data(
             qualification_text = row.get("자격제한 상세내용", "")
             scholarship_data['is_duplicate_support_restricted'] = check_duplicate_support_restriction(qualification_text)
 
+            # --- 가공된 분류 목록 매핑 ---
+            # data_cleaner에서 처리된 리스트를 모델 필드명에 맞게 매핑
+            scholarship_data['university_category'] = row.get('대학구분', [])
+            scholarship_data['grade_category'] = row.get('학년구분', [])
+            scholarship_data['department_category'] = row.get('학과구분', [])
+
             # Scholarship 모델 객체 생성 및 리스트에 추가
             scholarship_model = Scholarship.model_validate(scholarship_data)
             scholarship_models.append(scholarship_model)

@@ -53,13 +53,13 @@ class Scholarship(BaseModel):
 
 
     # --- 비고 ---
-    grade_criteria_notes: Optional[str] = Field(None, description="성적 기준 전체 비고")
-    income_criteria_notes: Optional[str] = Field(None, description="소득 기준 전체 비고")
-    support_notes: Optional[str] = Field(None, description="지원내역 전체 비고")
-    specific_qualification_notes: Optional[str] = Field(None, description="특정자격 전체 비고")
-    region_residence_notes: Optional[str] = Field(None, description="지역 거주 여부 전체 비고")
-    selection_method_notes: Optional[str] = Field(None, description="선발방법 전체 비고")
-    selection_personnel_notes: Optional[str] = Field(None, description="선발인원 전체 비고")
-    qualification_restriction_notes: Optional[str] = Field(None, description="자격제한 전체 비고")
-    recommendation_needed_notes: Optional[str] = Field(None, description="추천필요여부 전체 비고")
-    required_documents_notes: Optional[str] = Field(None, description="제출서류 전체 비고")
+    grade_criteria_notes: Optional[str] = Field(None, alias="성적기준 비고")
+    income_criteria_notes: Optional[str] = Field(None, alias="소득기준 비고")
+    support_notes: Optional[str] = Field(None, alias="지원내역 비고")
+    specific_qualification_notes: Optional[str] = Field(None, alias="특정자격 비고")
+    region_residence_notes: Optional[str] = Field(None, alias="지역거주여부 비고")
+    selection_method_notes: Optional[str] = Field(None, alias="선발방법 비고")
+    selection_personnel_notes: Optional[str] = Field(None, alias="선발인원 비고")
+    qualification_restriction_notes: Optional[str] = Field(None, alias="자격제한 비고")
+    recommendation_needed_notes: Optional[str] = Field(None, alias="추천필요여부 비고")
+    required_documents_notes: Optional[str] = Field(None, alias="제출서류 비고")
