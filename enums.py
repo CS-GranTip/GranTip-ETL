@@ -31,7 +31,14 @@ class GradeCriterionType(str, Enum):
 
 # 기준의 방향 (이상, 이하, 이내 등)
 class ThresholdDirection(str, Enum):
-    ABOVE = "이상"
+    ABOVE = "이상"    
     BELOW = "이하"
     WITHIN = "이내"
+    NONE = "해당없음"
+
+#기준 학기
+class BaseSemester(str, Enum):
+    LAST = "직전학기"
+    LAST2 = "직전두개학기"
+    AVG = "전체학기"
     NONE = "해당없음"
