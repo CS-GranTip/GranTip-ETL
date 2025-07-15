@@ -33,13 +33,6 @@ class Scholarship(BaseModel):
     # --- 선발 인원 정보 ---
     num_of_recipients_total: Optional[int]           = Field(None, description="총 선발 인원")
     recipients_by_category:  Optional[Dict[str,int]] = Field(None, description="구분별 선발 인원")
-    num_notes: Optional[str]                         = Field(None, description="선발 인원 비고")
-
-    # --- 분리된 성적 기준 ---
-    grade_criteria:       List[GradeCriterion]  = Field(default_factory=list, description="분리된 성적 기준 리스트")
-
-    # --- 분리된 소득 기준 ---
-    income_criteria:       List[IncomeCriterion] = Field(default_factory=list, description="분리된 소득 기준 리스트")
 
     # --- 기타 정보 ---
     is_recommendation_required:    bool      = Field(False, description="추천서 필요 여부")
