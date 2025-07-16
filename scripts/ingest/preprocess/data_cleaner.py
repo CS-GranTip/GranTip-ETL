@@ -133,6 +133,11 @@ def clean_raw_data(raw_data_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 stripped_value = value.strip()
                 processed_row[key] = None if stripped_value in ['해당없음', ''] else stripped_value
 
+        # URL 오타 교정 로직
+        url_key = '홈페이지 주소'
+        if url_key in processed_row and isinstance(processed_row[url_key], str):
+            processed_row[url_key] = processed_row[url_key].replace('http//', 'http://')
+
         # 비고 분리
         for field_name in FIELDS_WITH_NOTES:
             detail, notes = preprocess_text_field(processed_row.get(field_name))
