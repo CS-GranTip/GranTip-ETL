@@ -84,17 +84,23 @@ def parse_department_category(text: Optional[str]) -> List[str]:
 # --- 비고(※) 분리 로직 ---
 
 def preprocess_text_field(text: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-    """하나의 원본 텍스트 필드에서 비고(※)와 실제 상세 내용을 분리"""
+    """
+    텍스트 필드에서 내용 뒤에 따라오는 비고(※)만 분리합니다.
+    """
     if not text:
         return None, None
     
-    if '※' in text:
-        parts = text.split('※', 1)
-        detail = parts[0].strip() if parts[0].strip() else None
+    clean_text = text.strip()
+
+    # '※'가 맨 앞이 아니고, 중간에 있을 때만 분리
+    if '※' in clean_text and not clean_text.startswith('※'):
+        parts = clean_text.split('※', 1)
+        detail = parts[0].strip()
         notes = parts[1].strip()
-        return detail, notes
+        return detail if detail else None, notes if notes else None
     else:
-        return text.strip(), None
+        # 그 외의 경우 (※가 없거나, 맨 앞에 오는 경우)에는 전체를 detail로 취급
+        return clean_text if clean_text else None, None
     
 
 # --- 상수 ---
