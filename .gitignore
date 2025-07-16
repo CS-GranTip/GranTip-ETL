@@ -14,3 +14,5 @@ env/
 build/
 dist/
 *.egg-info/
+scripts/ingest/transform/grade_parser_test.py
+scripts/ingest/transform/personeltest.py
