@@ -22,3 +22,6 @@ __pycache__/
 # IDE / Editor
 .vscode/
 .idea/
+*.egg-info/
+scripts/ingest/transform/grade_parser_test.py
+scripts/ingest/transform/personeltest.py
