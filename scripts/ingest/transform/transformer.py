@@ -9,12 +9,68 @@ from models.criterion.income_criterion import IncomeCriterion
 from .validator import validate_scholarship_data
 from .grade_parser import extract_grade_criteria
 from .income_parser import extract_income_criteria
+import re
 
 def parse_selection_personnel(text: Optional[str]) -> Tuple[Optional[int], Optional[Dict[str, int]]]:
-    """선발인원 상세내용을 파싱합니다."""
-    if not text: return None, None
-    # TODO: 실제 텍스트 파싱 로직 구현
-    return None, None
+    """
+    OpenAPI의 선발인원 상세내용을 파싱하여 구조화된 데이터를 반환합니다.
+    '○' 형식으로 구분된 경우를 우선 처리하며, 기존 패턴도 유지합니다.
+    예: "○ 12명 ○ 국내: 20명 총 32명" -> (32, {'국내': 20})
+    """
+    if text is None:
+        return None, None
+    
+    categorized: Dict[str, int] = {}
+    
+    # '○'으로 분할하여 각 그룹 처리
+    groups = re.split(r'○', text.strip())
+    
+    for group in groups:
+        group = group.strip()
+        if not group:
+            continue
+        # 각 그룹에서 숫자와 '명' 추출
+        match = re.search(r'(\d+)\s*명', group)
+        if match:
+            num = int(match.group(1))
+            # 카테고리 추출: 숫자 앞의 텍스트를 키로 사용 
+            category_text = group[:match.start()].strip().rstrip(':')  # 콜론 제거
+            if category_text:
+                key = category_text.strip().lower().replace(' ', '_')
+                # '총' 키를 'total'로 매핑
+                if key == '총':
+                    key = 'total'
+                categorized[key] = num
+            # 카테고리 없으면 total로 통합 (기존 값에 더함)
+            else:
+                if 'total' in categorized:
+                    categorized['total'] += num
+                else:
+                    categorized['total'] = num
+    
+    # 총 인원 직접 추출 (우선 적용, 오버라이드)
+    total_match = re.search(r'총\s*(\d+)\s*명', text)
+    if total_match:
+        total = int(total_match.group(1))
+    elif categorized:
+        total = sum(categorized.values())
+    else:
+        total = None
+    
+    # 추가: 괄호 안 / 구분된 카테고리 파싱 (콜론 없음)
+    inner_match = re.search(r'\(([^)]+)\)', text)
+    if inner_match:
+        inner = inner_match.group(1)
+        inner_pattern = r'/?\s*([^/]+?)\s*(\d+)\s*명'
+        inner_matches = re.findall(inner_pattern, inner)
+        for cat, num in inner_matches:
+            key = cat.strip().lower().replace(' ', '_')
+            categorized[key] = int(num)
+    
+    if not categorized:
+        return None, None
+    
+    return total, categorized if categorized else None
 
 def check_duplicate_support_restriction(text: Optional[str]) -> bool:
     """자격제한 상세내용을 분석하여 중복수혜 제한 여부를 반환합니다."""
