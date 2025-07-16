@@ -59,15 +59,24 @@ def transform_data(
     for row in cleaned_data:
         try:
             scholarship_data = row.copy()
-            scholarship_id = row.get("번호")
+            # 원본 '번호'를 임시 ID로 사용
+            """
+            DB 저장 시에는 
+            1. Scholarship 먼저 저장
+            2. 생성된 실제 id 반환
+            3. Scholarship의 original_id와 관련된 객체들의 FK를 실제 id로 교체 후 INSERT
+            """
+            temp_id = row.get("번호")
+            if temp_id is None:
+                continue # 임시 ID가 없으면 처리 불가
             
             # 각 기준별 Parser 호출하여 구조화된 객체 생성
             grade_criterias = extract_grade_criteria(
-                scholarship_id=scholarship_id,
+                scholarship_id=temp_id,
                 raw_text=row.get("성적기준 상세내용")
             )
             income_criterias = extract_income_criteria(
-                scholarship_id=scholarship_id,
+                scholarship_id=temp_id,
                 raw_text=row.get("소득기준 상세내용")
             )
 

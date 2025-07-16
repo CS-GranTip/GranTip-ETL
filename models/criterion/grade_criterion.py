@@ -12,6 +12,7 @@ from enums import GradeCriterionType, ThresholdDirection, BaseSemester
 class GradeCriterion(BaseModel):
     model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 
+    id: Optional[int] = Field(None, description="규칙의 고유 ID (PK)")
     scholarship_id: int = Field(..., description="Scholarship ID(FK)")
     group: str = Field(..., description="대상 그룹 (예: '신입생', '재학생')")
     type: GradeCriterionType = Field(..., description="기준 종류")
