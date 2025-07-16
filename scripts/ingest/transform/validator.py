@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _log_prefix(scholarship: Scholarship) -> str:
-    return f"ID {scholarship.id} ({scholarship.product_name})"
+    return f"ID {scholarship.original_id} ({scholarship.product_name})"
 
 
 def validate_scholarship_data(
