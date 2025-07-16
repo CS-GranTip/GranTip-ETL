@@ -1,4 +1,5 @@
 import re
+import json
 from typing import List, Optional, Tuple, Dict, Any
 
 # --- 각 필드별 List[str] 분리 로직 ---
@@ -84,17 +85,23 @@ def parse_department_category(text: Optional[str]) -> List[str]:
 # --- 비고(※) 분리 로직 ---
 
 def preprocess_text_field(text: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-    """하나의 원본 텍스트 필드에서 비고(※)와 실제 상세 내용을 분리"""
+    """
+    텍스트 필드에서 내용 뒤에 따라오는 비고(※)만 분리합니다.
+    """
     if not text:
         return None, None
     
-    if '※' in text:
-        parts = text.split('※', 1)
-        detail = parts[0].strip() if parts[0].strip() else None
+    clean_text = text.strip()
+
+    # '※'가 맨 앞이 아니고, 중간에 있을 때만 분리
+    if '※' in clean_text and not clean_text.startswith('※'):
+        parts = clean_text.split('※', 1)
+        detail = parts[0].strip()
         notes = parts[1].strip()
-        return detail, notes
+        return detail if detail else None, notes if notes else None
     else:
-        return text.strip(), None
+        # 그 외의 경우 (※가 없거나, 맨 앞에 오는 경우)에는 전체를 detail로 취급
+        return clean_text if clean_text else None, None
     
 
 # --- 상수 ---
@@ -127,6 +134,11 @@ def clean_raw_data(raw_data_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 stripped_value = value.strip()
                 processed_row[key] = None if stripped_value in ['해당없음', ''] else stripped_value
 
+        # URL 오타 교정 로직
+        url_key = '홈페이지 주소'
+        if url_key in processed_row and isinstance(processed_row[url_key], str):
+            processed_row[url_key] = processed_row[url_key].replace('http//', 'http://')
+
         # 비고 분리
         for field_name in FIELDS_WITH_NOTES:
             detail, notes = preprocess_text_field(processed_row.get(field_name))
@@ -143,3 +155,47 @@ def clean_raw_data(raw_data_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         cleaned_rows.append(processed_row)
 
     return cleaned_rows
+
+# --- 데이터 파싱 테스트 실행 부분 ---
+if __name__ == "__main__":
+    # 원본 JSON 데이터
+    raw_json_data = {
+        "번호": 1,
+        "상품명": "행복나눔 장학생",
+        "운영기관명": "광주남구장학회",
+        "운영기관구분": "지자체(출자출연기관)",
+        "상품구분": "장학금",
+        "학자금유형구분": "지역연고",
+        "모집시작일": "2024-09-23",
+        "모집종료일": "2024-10-11",
+        "홈페이지 주소": "https://namgu.gwangju.kr",
+        "대학구분": "4년제(5~6년제포함)",
+        "학년구분": "대학2학기대학3학기대학4학기대학5학기대학6학기대학7학기대학8학기이상대학신입생",
+        "학과구분": "공학계열교육계열사회계열예체능계열의약계열인문계열자연계열제한없음",
+        "성적기준 상세내용": "○ 직전학기 12학점 이상 취득하고 성적 평균 2.75 이상인 자 (4.3만점은 2.6이상)",
+        "소득기준 상세내용": "○ 2024년도 기준 중위소득 100% 이하인 가구※ 직계가족의 3개월 평균국민건강보험료 산정",
+        "지원내역 상세내용": "○ 1인당 100만원※ 생활비 지원",
+        "특정자격 상세내용": "○ 공고일 현재 신청 학생 또는 학생의 부모가 광주광역시 남구에 주민등록상 1년 이상 주소를 두고 이고 유형별 자격과 요건을 충족하는 자",
+        "지역거주여부 상세내용": "○ 보호자 또는 본인이 선발 공고일 현재 주민등록상 주소지가 광주광역시 남구로 1년 이상 두고 신 청 요건을 갖춘 자",
+        "선발방법 상세내용": "○ 서류심사 (사무국) : 제출서류 신청요건 충족 및 직전학기 성적 등 확인○ 심사의결 (장학생 선발 심사위원회)○ 최종선정자 발표○ 선 발결과 : 개별 안내 및 홈페이지 게시",
+        "선발인원 상세내용": "○ 12명",
+        "자격제한 상세내용": "○ 기술대학○ 2년 미만 교육과정의 각종 학교○ 평생교육법에 의거 설립한 학교○ 최근 2년 남구장학회 장학생으로 선발된 자○ 휴학(등록 휴학 포함) / 제적 / 자퇴 / 졸업 등 학기 미등록자※ 자세한 사항 공고 참조",
+        "추천필요여부 상세내용": "해당없음",
+        "제출서류 상세내용": "○ 장학생 신청서○ 주민등록표등본○ 학생 명의의 가족관계증명서○ 건강보험 자격확인서○ 건강보험료 납부확인서○ 2024년 1학기 성적증명서○ 재학증명서○ 2학기 등록금 납입증명서○ 개인정보 수집·이용·제공 및 조회 동의서○ 통장 사본○ 가정환경 세대구성 관련증명서 (해당자)※ 자세한 사항 공고문 참조"
+    }
+
+    # clean_raw_data 함수는 List[Dict]를 인자로 받으므로, 단일 딕셔너리를 리스트로 감싸줍니다.
+    raw_data_list = [raw_json_data]
+
+    print("--- 원본 데이터 ---")
+    print(json.dumps(raw_json_data, indent=4, ensure_ascii=False))
+
+    # 데이터 정제 함수 호출
+    cleaned_data_list = clean_raw_data(raw_data_list)
+
+    print("\n--- data_parser를 거친 후의 데이터 ---")
+    if cleaned_data_list:
+        print(json.dumps(cleaned_data_list[0], indent=4, ensure_ascii=False))
+    else:
+        print("정제된 데이터가 없습니다.")
+

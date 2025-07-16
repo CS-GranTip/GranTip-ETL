@@ -7,12 +7,16 @@ project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.append(str(project_root))
 
 from models.criterion.grade_criterion import GradeCriterion  # models.py에서 GradeCriterion 임포트
+from enums import GradeCriterionType, BaseSemester, ThresholdDirection
 
 # 원본 grade_parser.py의 extract_grade_criteria 함수
 def extract_grade_criteria(scholarship_id: int, raw_text: str) -> List[GradeCriterion]:
     """
     성적기준 텍스트에서 성적만 추출하여 GradeCriterion 객체 리스트 반환.
     """
+    if not raw_text:
+        return []
+
     criteria = []    
 
     groups = re.split(r'○', raw_text)  # ○를 보고 분할

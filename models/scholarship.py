@@ -13,7 +13,9 @@ class Scholarship(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra='ignore', use_enum_values=True)
 
     # --- 필수 정보 ---
-    id: int                     = Field(..., alias="번호")
+    id: Optional[int] = Field(None, description="시스템 내부 고유 ID (PK)")
+    # 2. 원본 데이터의 '번호'는 일반 필드로 관리
+    original_id: int = Field(..., alias="번호", description="운영기관이 제공한 원본 번호")
     product_name: str           = Field(..., alias="상품명")
     provider_name: str          = Field(..., alias="운영기관명")
     provider_type: ProviderType = Field(..., alias="운영기관구분")

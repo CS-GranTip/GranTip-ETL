@@ -13,6 +13,15 @@ env/
 .tox/
 build/
 dist/
+*.egg-info/# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE / Editor
+.vscode/
+.idea/
 *.egg-info/
 scripts/ingest/transform/grade_parser_test.py
 scripts/ingest/transform/personeltest.py
