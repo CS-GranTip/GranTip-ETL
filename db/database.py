@@ -1,11 +1,18 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # DB 연결, 세션, 모델이 공유할 Base를 중앙에서 관리
 
-# MySQL + PyMySQL 드라이버 사용 기준
-# mysql+pymysql://<사용자이름>:<비밀번호>@<호스트>:<포트>/<DB이름>?charset=utf8mb4
-DATABASE_URL = "mysql+pymysql://root:1234@localhost:3307/grantip?charset=utf8mb4"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DOTENV_PATH = PROJECT_ROOT / '.env'
+load_dotenv(dotenv_path=DOTENV_PATH)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL is None:
+    raise ValueError("DATABASE_URL 환경 변수를 찾을 수 없습니다.")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
