@@ -1,10 +1,11 @@
 import re
 import logging
-from typing import List
+from typing import List, Dict, Any
 from models.scholarship import Scholarship
 from models.criterion.grade_criterion import GradeCriterion
 from models.criterion.income_criterion import IncomeCriterion
 from models.criterion.general_criterion import GeneralCriterion
+from models.scholarship_region import ScholarshipRegion
 from enums import ScholarshipCategory, GradeCriterionType
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,7 +20,9 @@ def validate_scholarship_data(
     scholarship: Scholarship,
     grade_criteria: List[GradeCriterion],
     income_criteria: List[IncomeCriterion],
-    general_criteria: List[GeneralCriterion]
+    general_criteria: List[GeneralCriterion],
+    scholarship_regions: List[ScholarshipRegion],
+    id_to_region_map: Dict[int, Any]
 ) -> bool:
     validation_checks = [
         _validate_application_dates(scholarship),
@@ -29,6 +32,7 @@ def validate_scholarship_data(
         _validate_notes_extraction(scholarship),
         _validate_all_grade_criteria_fields(grade_criteria, scholarship),
         _validate_all_income_criteria_fields(income_criteria, scholarship),
+        _validate_region_data(scholarship, scholarship_regions, id_to_region_map),
     ]
 
     if not all(validation_checks):
@@ -126,4 +130,32 @@ def _validate_all_income_criteria_fields(income_criteria: List[IncomeCriterion],
         if i.median_income_ratio and not (0 <= i.median_income_ratio <= 500):
             logger.warning(f"{_log_prefix(scholarship)}: 중위소득 비율({i.median_income_ratio})이 비정상적입니다.")
             return False
+    return True
+
+
+def _validate_region_data(
+    scholarship: Scholarship,
+    scholarship_regions: List[ScholarshipRegion],
+    id_to_region_map: Dict[int, Any]
+) -> bool:
+    """지역 정보의 정합성을 검증합니다."""
+    # '지역연고' 장학금인데 지역 정보가 없는 경우
+    if scholarship.scholarship_category == ScholarshipCategory.LOCAL and not scholarship_regions:
+        # 텍스트 자체가 없는 경우는 정상일 수 있으므로 경고하지 않음
+        if scholarship.region_residence_detail:
+            logger.warning(f"{_log_prefix(scholarship)}: '지역연고' 장학금이지만, 텍스트에서 지역 정보를 추출하지 못했습니다.")
+            return False
+
+    # 자식 지역(시/군/구)은 있는데 부모 지역(시/도)이 없는 경우 (계층 구조 무결성)
+    if scholarship_regions and id_to_region_map:
+        region_ids_present = {sr.region_id for sr in scholarship_regions}
+        for region_id in region_ids_present:
+            region_info = id_to_region_map.get(region_id)
+            # region_info가 있고, parent_id가 None이 아니면 자식 노드임
+            if region_info and region_info.get('parent_id') is not None:
+                if region_info['parent_id'] not in region_ids_present:
+                    parent_name = id_to_region_map.get(region_info['parent_id'], {}).get('name', '알 수 없음')
+                    logger.warning(f"{_log_prefix(scholarship)}: 지역 정보에 '{region_info['name']}'이(가) 있지만, "
+                                   f"부모 지역인 '{parent_name}'이(가) 누락되었습니다.")
+                    return False
     return True

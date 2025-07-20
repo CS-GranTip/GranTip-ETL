@@ -6,11 +6,15 @@ from models.scholarship import Scholarship
 from models.criterion.grade_criterion import GradeCriterion
 from models.criterion.income_criterion import IncomeCriterion
 from models.criterion.general_criterion import GeneralCriterion
+from models.scholarship_region import ScholarshipRegion
 
 from .validator import validate_scholarship_data
 from .grade_parser import extract_grade_criteria
 from .income_parser import extract_income_criteria
+from .address_parser import address_parser
 import re
+import sys
+from pathlib import Path
 
 def parse_selection_personnel(text: Optional[str]) -> Tuple[Optional[int], Optional[Dict[str, int]]]:
     """
@@ -102,10 +106,76 @@ def check_duplicate_support_restriction(text: Optional[str]) -> bool:
 
     return False
 
+def extract_region_links(
+    scholarship_id: int,
+    raw_text: Optional[str],
+    sido_map: Dict[str, int],
+    all_sigungus_map: Dict[str, List[Dict[str, int]]],
+    id_to_region_map: Dict[int, Any]
+) -> List[ScholarshipRegion]:
+    """
+    시/도 맵, 시/군/구 역방향 맵, ID-객체 맵을 사용하여
+    텍스트에서 올바른 지역 ID와 그 부모 ID까지 찾아 객체 리스트를 생성합니다.
+    """
+    if not raw_text:
+        return []
+
+    parsed_region_names = address_parser(raw_text)
+    if not parsed_region_names:
+        return []
+
+    links = []
+    found_ids = set()
+
+    # 텍스트에서 명시적으로 언급된 모든 시/도 ID를 먼저 찾기
+    found_sido_ids_in_text = set()
+    for name in parsed_region_names:
+        if name in sido_map:
+            sido_id = sido_map[name]
+            if sido_id not in found_ids:
+                links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=sido_id))
+                found_ids.add(sido_id)
+            found_sido_ids_in_text.add(sido_id)
+
+    # 텍스트에서 언급된 시/군/구를 찾고, 그 부모 시/도까지 함께 추가
+    for name in parsed_region_names:
+        if name in all_sigungus_map:
+            possible_matches = all_sigungus_map[name]
+            match_to_add = None
+
+            # 고유한 이름의 시/군/구 (예: '인제군')
+            if len(possible_matches) == 1:
+                match_to_add = possible_matches[0]
+            
+            # 중복된 이름의 시/군/구 (예: '남구'), 문맥 활용
+            elif found_sido_ids_in_text:
+                for match in possible_matches:
+                    if match['parent_id'] in found_sido_ids_in_text:
+                        match_to_add = match
+                        break
+            
+            if match_to_add:
+                # 시/군/구 ID 추가
+                sigungu_id = match_to_add['id']
+                if sigungu_id not in found_ids:
+                    links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=sigungu_id))
+                    found_ids.add(sigungu_id)
+                
+                # 해당 시/군/구의 부모 시/도 ID도 함께 추가
+                parent_sido_id = match_to_add.get('parent_id')
+                if parent_sido_id and parent_sido_id not in found_ids:
+                    links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=parent_sido_id))
+                    found_ids.add(parent_sido_id)
+
+    return links
+
 
 def transform_data(
-        cleaned_data: List[Dict[str, Any]]
-) -> Tuple[List[Scholarship], List[GradeCriterion], List[IncomeCriterion], List[GeneralCriterion]]:
+        cleaned_data: List[Dict[str, Any]],
+        sido_map: Dict[str, int],
+        all_sigungus_map: Dict[str, List[Dict[str, int]]],
+        id_to_region_map: Dict[int, Any]
+) -> Tuple[List[Scholarship], List[GradeCriterion], List[IncomeCriterion], List[GeneralCriterion], List[ScholarshipRegion]]:
     """
     정제된 딕셔너리 리스트를 최종 Scholarship Pydantic 모델 리스트로 변환합니다.
     """
@@ -113,6 +183,7 @@ def transform_data(
     grade_criteria_models = []
     income_criteria_models = []
     general_criteria_models = []
+    scholarship_region_models = []
 
     for row in cleaned_data:
         try:
@@ -133,6 +204,7 @@ def transform_data(
                 scholarship_id=temp_id,
                 raw_text=row.get("성적기준 상세내용")
             )
+
             parsed_income_data = extract_income_criteria(
                 scholarship_id=temp_id,
                 raw_text=row.get("소득기준 상세내용")
@@ -140,7 +212,14 @@ def transform_data(
             # 딕셔너리에서 각 리스트를 추출
             general_criterias = parsed_income_data.get("general_criteria", [])
             income_criterias = parsed_income_data.get("income_criteria", [])
-
+            
+            region_links = extract_region_links(
+                scholarship_id=temp_id,
+                raw_text=row.get("지역거주여부 상세내용"),
+                sido_map=sido_map,
+                all_sigungus_map=all_sigungus_map,
+                id_to_region_map=id_to_region_map
+            )
 
             # 선발 인원 처리
             total_recipients, recipients_by_cat = parse_selection_personnel(row.get("선발인원 상세내용"))
@@ -172,19 +251,61 @@ def transform_data(
             grade_criteria_models.extend(grade_criterias)
             income_criteria_models.extend(income_criterias)
             general_criteria_models.extend(general_criterias)
+            scholarship_region_models.extend(region_links)
 
         except ValidationError as e:
             print(f"데이터 검증 실패 (ID: {row.get('번호', 'N/A')}): {e}")
         except Exception as e:
             print(f"알 수 없는 에러 발생 (ID: {row.get('번호', 'N/A')}): {e}")
 
-    return scholarship_models, grade_criteria_models, income_criteria_models, general_criteria_models
+    return scholarship_models, grade_criteria_models, income_criteria_models, general_criteria_models, scholarship_region_models
 
 
 
     
 
 if __name__ == "__main__":
+    # DB 모듈을 찾기 위해 프로젝트 루트 경로 추가
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    sys.path.append(str(PROJECT_ROOT))
+
+    from db.database import SessionLocal
+    from db.models.region import Region as RegionDBModel
+
+    def get_region_maps_from_db() -> Tuple[Dict[str, int], Dict[str, List[Dict[str, int]]], Dict[int, Any]]:
+        """
+        DB에서 지역 정보를 조회하여 3가지 종류의 맵을 생성합니다.
+        1. sido_map: {'서울특별시': 2, ...}
+        2. all_sigungus_map: {'남구': [{'id': 47, 'parent_id': 3}, {'id': 61, 'parent_id': 4}, ...]}
+        3. id_to_region_map: {2: {'name': '서울특별시', 'parent_id': None}, 47: {'name': '남구', 'parent_id': 3}, ...}
+        """
+        print("\n[DB] 데이터베이스에서 지역 정보를 조회하여 맵을 생성합니다...")
+        db = SessionLocal()
+        try:
+            regions = db.query(RegionDBModel).all()
+            if not regions:
+                print("⚠️  경고: DB에 지역 데이터가 없습니다. 빈 맵을 반환합니다.")
+                return {}, {}, {}
+            
+            sido_map: Dict[str, int] = {}
+            all_sigungus_map: Dict[str, List[Dict[str, int]]] = {}
+            id_to_region_map: Dict[int, Any] = {}
+
+            for region in regions:
+                id_to_region_map[region.id] = {'name': region.region_name, 'parent_id': region.parent_id}
+                if region.region_level == 0 or region.region_level == 1: # 전국, 시/도
+                    sido_map[region.region_name] = region.id
+                elif region.region_level == 2: # 시/군/구
+                    if region.region_name not in all_sigungus_map:
+                        all_sigungus_map[region.region_name] = []
+                    all_sigungus_map[region.region_name].append({'id': region.id, 'parent_id': region.parent_id})
+            
+            print(f"✅ {len(sido_map)}개의 시/도, {len(all_sigungus_map)}개의 시/군/구 맵을 생성했습니다.")
+            return sido_map, all_sigungus_map, id_to_region_map
+        finally:
+            db.close()
+
+
     # --- 테스트 환경 설정 ---
     print("데이터 변환 및 검증 파이프라인 테스트 시작")
 
@@ -246,11 +367,19 @@ if __name__ == "__main__":
          '성적기준 비고': None, '소득기준 비고': None, '지원내역 비고': '기관확인 필요', '특정자격 비고': None, '지역거주여부 비고': None, '선발방법 비고': '기관확인 필요', '선발인원 비고': None, '자격제한 비고': '이 외 자세한 사항은 첨부파일 참고', '추천필요여부 비고': None, '제출서류 비고': '자세한 사항은 첨부파일 참고'}
     ]
 
+    # DB에서 지역명-ID 맵 가져오기
+    sido_map_from_db, sigungus_map_from_db, id_map_from_db = get_region_maps_from_db()
+
     # --- Step 1: 데이터 변환 (Transformer) ---
     print("\n[Step 1] Transformer를 사용하여 Pydantic 객체로 변환 중...")
     
-    scholarships, all_grade_criteria, all_income_criteria, all_general_criteria = transform_data(sample_cleaned_data)
-    
+    scholarships, all_grade_criteria, all_income_criteria, all_general_criteria, all_region_links = transform_data(
+        cleaned_data=sample_cleaned_data,
+        sido_map=sido_map_from_db,
+        all_sigungus_map=sigungus_map_from_db,
+        id_to_region_map=id_map_from_db
+    )
+        
     print(f"✅ 총 {len(scholarships)}개의 장학금 객체 변환 완료.")
 
 
@@ -274,7 +403,30 @@ if __name__ == "__main__":
     for i, gnc in enumerate(all_general_criteria[:2]):
         print(f"\n--- GeneralCriterion {i+1} (Scholarship ID: {gnc.scholarship_id}) ---")
         print(gnc.model_dump_json(indent=2))
+    print("\n--- 변환된 ScholarshipRegion 객체 구조 (전체) ---")
+    grouped_links = {}
+    for link in all_region_links:
+        if link.scholarship_id not in grouped_links:
+            grouped_links[link.scholarship_id] = []
+        grouped_links[link.scholarship_id].append(link)
 
+    for scholarship_id, links in sorted(grouped_links.items()):
+        print(f"\n--- Scholarship ID: {scholarship_id} ---")
+        for link in sorted(links, key=lambda x: x.region_id):
+            print(link.model_dump_json(indent=2))
+
+    # --- 변환된 객체들을 scholarship_id 기준으로 그룹화 ---
+    grouped_grades = {s.original_id: [] for s in scholarships}
+    for item in all_grade_criteria: grouped_grades[item.scholarship_id].append(item)
+    
+    grouped_incomes = {s.original_id: [] for s in scholarships}
+    for item in all_income_criteria: grouped_incomes[item.scholarship_id].append(item)
+    
+    grouped_generals = {s.original_id: [] for s in scholarships}
+    for item in all_general_criteria: grouped_generals[item.scholarship_id].append(item)
+    
+    grouped_regions = {s.original_id: [] for s in scholarships}
+    for item in all_region_links: grouped_regions[item.scholarship_id].append(item)
 
     # --- Step 2: 데이터 정합성 검증 (Validator) ---
     print("\n[Step 2] Validator를 사용하여 데이터 정합성 검증 중...")
@@ -294,9 +446,11 @@ if __name__ == "__main__":
 
         is_valid = validate_scholarship_data(
             scholarship=scholarship,
-            grade_criteria=related_grades,
-            income_criteria=related_incomes,
-            general_criteria=related_generals 
+            grade_criteria=grouped_grades.get(temp_s_id, []),
+            income_criteria=grouped_incomes.get(temp_s_id, []),
+            general_criteria=grouped_generals.get(temp_s_id, []),
+            scholarship_regions=grouped_regions.get(temp_s_id, []),
+            id_to_region_map=id_map_from_db
         )
         
         if is_valid:
