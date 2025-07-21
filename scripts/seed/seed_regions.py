@@ -13,7 +13,6 @@ from db.database import SessionLocal, engine, Base
 
 # 경로 변수 정의
 JSON_FILE_PATH = PROJECT_ROOT / "data" / "regions.json"
-DB_FILE_PATH = PROJECT_ROOT / "region.db" 
 
 
 def seed_db():
@@ -63,7 +62,7 @@ def seed_db():
         db.add_all(regions_to_add)
         db.commit()
         
-        print(f"지역 데이터 저장이 완료되었습니다. ({DB_FILE_PATH})")
+        print(f"지역 데이터 저장이 완료되었습니다.")
 
     except Exception as e:
         print(f"오류가 발생했습니다: {e}")

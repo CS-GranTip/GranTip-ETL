@@ -1,10 +1,10 @@
 # db/models/criterion/grade_criterion.py
-from sqlalchemy import Column, Integer, String, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, TEXT
 from db.database import Base
 
 class GradeCriterion(Base):
     __tablename__ = "grade_criterion"
-    __table_args__ = {'extend_existing': True}  # 이 줄 추가!
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     scholarship_id = Column(Integer, ForeignKey("scholarship.id"), comment="Scholarship ID(FK)")
@@ -20,3 +20,6 @@ class GradeCriterion(Base):
     direction = Column(String(50), comment="기준 방향 (Enum 문자열로 저장)")
     semester = Column(String(100), comment="기준 학기 (Enum 문자열로 저장)")
     description = Column(String(500), nullable=True, comment="원본 텍스트")
+
+    required_qualifications = Column(TEXT, comment="장학금 지원을 위한 필수 자격 조건 목록 (JSON 문자열로 저장)")
+    preference_qualifications = Column(TEXT, comment="우대 조건 목록 (JSON 문자열로 저장)")

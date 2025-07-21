@@ -72,10 +72,30 @@ def parse_selection_personnel(text: Optional[str]) -> Tuple[Optional[int], Optio
             key = cat.strip().lower().replace(' ', '_')
             categorized[key] = int(num)
     
-    if not categorized:
-        return None, None
+    # --- total 계산 및 categorized 정리 ---
+
+    # 1. 텍스트에서 명시적인 '총 O명'을 찾아 total로 우선 설정
+    total_match = re.search(r'총\s*(\d+)\s*명', text)
+    if total_match:
+        total = int(total_match.group(1))
+    # 2. 명시적인 '총'이 없으면, 파싱된 딕셔너리에서 'total' 키 값을 사용
+    elif 'total' in categorized:
+        total = categorized['total']
+    # 3. 그것도 없으면, 카테고리별 인원을 모두 합산하여 total 계산
+    elif categorized:
+        # 'total'이 아닌 다른 키들의 값을 합산
+        total = sum(v for k, v in categorized.items() if k != 'total')
+    else:
+        total = None
+
+    # 'total' 키를 categorized 딕셔너리에서 최종적으로 제거
+    if 'total' in categorized:
+        del categorized['total']
+
+    # categorized가 비어있으면 None으로, 아니면 그대로 사용
+    final_categorized = categorized if categorized else None
     
-    return total, categorized if categorized else None
+    return total, final_categorized
 
 def check_duplicate_support_restriction(text: Optional[str]) -> bool:
     """자격제한 상세내용을 분석하여 중복수혜 제한 여부를 반환합니다."""

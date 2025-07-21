@@ -20,12 +20,12 @@ class Scholarship(BaseModel):
     provider_name: str          = Field(..., alias="운영기관명")
     provider_type: ProviderType = Field(..., alias="운영기관구분")
     product_type: ProductType   = Field(..., alias="상품구분")
-    scholarship_category: ScholarshipCategory = Field(..., alias="학자금유형구분")
+    scholarship_category: Optional[ScholarshipCategory] = Field(None, alias="학자금유형구분")
 
     # --- 날짜 및 URL 정보 ---
     application_start_date: date     = Field(..., alias="모집시작일")
     application_end_date:   date     = Field(..., alias="모집종료일")
-    homepage_url:            HttpUrl = Field(None, alias="홈페이지 주소")
+    homepage_url:           Optional[HttpUrl] = Field(None, alias="홈페이지 주소")
 
     # --- 가공된 분류 목록 ---
     university_category: List[str] = Field(default_factory=list, description="대학 구분")
