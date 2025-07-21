@@ -16,7 +16,6 @@ class ScholarshipCategory(str, Enum):
     INCOME = "소득구분"
     DISABILITY = "장애인"
     ETC = "기타"
-    NONE = "해당없음"
 
 # --- 성적 기준 관련 Enum ---
 
