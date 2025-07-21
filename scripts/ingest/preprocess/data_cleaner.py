@@ -128,6 +128,11 @@ def clean_raw_data(raw_data_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for row in raw_data_rows:
         processed_row = row.copy()
 
+        # 상품명과 운영기관명 결합
+        scholarship_name = f"[{row.get('운영기관명', '')}]{row.get('상품명', '')}"
+        processed_row['상품명'] = scholarship_name
+        del processed_row['운영기관명']
+
         # 모든 필드에 대해 '해당없음' -> None 변환 & 양옆 공백 제거
         for key, value in processed_row.items():
             if isinstance(value, str):
@@ -151,6 +156,9 @@ def clean_raw_data(raw_data_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         for field_name, parser_function in CATEGORY_PARSERS.items():
             if field_name in processed_row:
                 processed_row[field_name] = parser_function(processed_row.get(field_name))
+
+        
+
 
         cleaned_rows.append(processed_row)
 
