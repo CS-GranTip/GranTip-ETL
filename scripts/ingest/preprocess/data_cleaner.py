@@ -103,6 +103,31 @@ def preprocess_text_field(text: Optional[str]) -> Tuple[Optional[str], Optional[
         # 그 외의 경우 (※가 없거나, 맨 앞에 오는 경우)에는 전체를 detail로 취급
         return clean_text if clean_text else None, None
     
+# --- url 정제 ---
+def clean_url(url: Optional[str]) -> Optional[str]:
+    """
+    URL 문자열을 정제하고 표준 형식으로 변환합니다.
+
+    - None 또는 빈 문자열은 None으로 반환
+    - 'htps://' 또는 'http//' 같은 일반적인 오타 수정
+    - 'http' 스킴이 없으면 'https://'를 기본값으로 추가
+    """
+    if not url or not isinstance(url, str):
+        return None
+    
+    # 양쪽 공백 제거 및 소문자 변환
+    cleaned_url = url.strip().lower()
+    
+    # 일반적인 오타 수정
+    cleaned_url = cleaned_url.replace('htps://', 'https://')
+    cleaned_url = cleaned_url.replace('http//', 'http://')
+
+    # 스킴이 없는 경우 https:// 추가
+    if not cleaned_url.startswith(('http://', 'https://')):
+        cleaned_url = f"https://{cleaned_url}"
+    
+    return cleaned_url
+    
 
 # --- 상수 ---
 CATEGORY_PARSERS = {
@@ -131,7 +156,6 @@ def clean_raw_data(raw_data_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         # 상품명과 운영기관명 결합
         scholarship_name = f"[{row.get('운영기관명', '')}]{row.get('상품명', '')}"
         processed_row['상품명'] = scholarship_name
-        del processed_row['운영기관명']
 
         # 모든 필드에 대해 '해당없음' -> None 변환 & 양옆 공백 제거
         for key, value in processed_row.items():
@@ -139,10 +163,8 @@ def clean_raw_data(raw_data_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 stripped_value = value.strip()
                 processed_row[key] = None if stripped_value in ['해당없음', ''] else stripped_value
 
-        # URL 오타 교정 로직
-        url_key = '홈페이지 주소'
-        if url_key in processed_row and isinstance(processed_row[url_key], str):
-            processed_row[url_key] = processed_row[url_key].replace('http//', 'http://')
+        # URL 정제
+        processed_row['홈페이지 주소'] = clean_url(row.get('홈페이지 주소'))
 
         # 비고 분리
         for field_name in FIELDS_WITH_NOTES:
