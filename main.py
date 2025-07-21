@@ -102,9 +102,9 @@ def validate_all_data(scholarships, all_grade_criteria, all_income_criteria, all
 
         if is_valid:
             valid_scholarships.append(s)
-            if temp_s_id in grouped_grades: valid_grade_criteria.append(grouped_grades[temp_s_id])
-            if temp_s_id in grouped_incomes: valid_income_criteria.append(grouped_incomes[temp_s_id])
-            if temp_s_id in grouped_generals: valid_general_criteria.append(grouped_generals[temp_s_id])
+            if temp_s_id in grouped_grades: valid_grade_criteria.extend(grouped_grades[temp_s_id])
+            if temp_s_id in grouped_incomes: valid_income_criteria.extend(grouped_incomes[temp_s_id])
+            if temp_s_id in grouped_generals: valid_general_criteria.extend(grouped_generals[temp_s_id])
             if temp_s_id in grouped_regions: valid_region_links.extend(grouped_regions[temp_s_id])
         else:
             logger.warning(f"  - 검증 실패: Scholarship Original ID: {s.original_id}, Name: {s.product_name}")
@@ -118,7 +118,8 @@ def run_pipeline(sido_map, sigungus_map, id_to_region_map):
 
     # 1. 데이터 수집
     logger.info("[Step 1] OpenAPI로부터 데이터를 수집합니다...")
-    raw_data = collect_data(page=1, perPage=100)
+    #raw_data = collect_data(page=1, perPage=100)
+    raw_data = collect_all_data()
     if not raw_data:
         logger.info("수집된 데이터가 없어 파이프라인을 종료합니다.")
         return
@@ -140,18 +141,29 @@ def run_pipeline(sido_map, sigungus_map, id_to_region_map):
     logger.info(f"✅ 총 {len(scholarships)}개의 장학금 객체 변환 완료")
 
     # 4. 데이터 검증
-    valid_data = validate_all_data(
+    valid_data_tuple = validate_all_data(
         scholarships, grade_criteria, income_criteria, general_criteria, region_links, id_to_region_map
     )
-    valid_scholarships, _, _, _, _ = valid_data
+    valid_scholarships = valid_data_tuple[0]
     logger.info(f"✅ 총 {len(valid_scholarships)}개의 장학금 데이터가 최종 정합성 검증을 통과했습니다.")
 
     # 5. DB 저장
     if valid_scholarships:
         logger.info("[Step 5] 유효한 데이터를 데이터베이스에 저장합니다.")
-        # --- DB 저장 로직 (구현 시 주석 해제) ---
-        # from scripts.ingest.db_loader import save_validated_data
-        # save_validated_data(*valid_data)
+        # --- DB 저장 로직 ---
+        from db.data_loader import load_to_db
+        v_scholarships, v_grades, v_incomes, v_generals, v_regions = valid_data_tuple
+        
+        # 딕셔너리 생성
+        data_to_load = {
+            "scholarships": v_scholarships,
+            "grades": v_grades,
+            "incomes": v_incomes,
+            "generals": v_generals,
+            "regions": v_regions
+        }
+
+        load_to_db(data_to_load)
         logger.info(f"✅ {len(valid_scholarships)}개의 유효한 장학금 데이터 저장 완료")
     else:
         logger.info("저장할 유효한 데이터가 없습니다.")
