@@ -285,50 +285,36 @@ from typing import Optional, List
 
 def address_parser(text: Optional[str], org_name: Optional[str] = None) -> Optional[List[str]]:
     """
-    OpenAPI의 지역거주여부 상세내용을 받아온 후 해당 내용 중에서 주소지만 추출
-    예:○ 장학생 선발 공고일 1년 전부터 부모 또는 본인이 청양군에 주소를 두고 거주한 자 > '청양군'
-    예:○ 보호자 또는 본인이 선발 공고일 현재 주민등록상 주소지가 광주광역시 남구로 1년 이상 두고 신청 요건을 갖춘 자 > '광주광역시','남구'
-    '관내'가 포함된 경우 운영기관명에서 추가로 주소 추출
+    [최종 수정] 단어 단위 탐색으로 오탐을 방지하고, 안정적인 정규식으로
+    읍/면/동 추출 정확도를 높인 최종 버전입니다.
     """
-    if text is None:
+    if not text and not org_name:
         return None
     
-    # 텍스트에서 한글 단어 추출
-    words = re.findall(r'\b[\uac00-\ud7a3]+\b', text)
-    
-    matches = []
+    combined_text = text or ""
+    if org_name:
+        combined_text += " " + org_name
+
+    found_regions = set()
+
+    # 1. 시/도, 시/군/구 찾기 (단어 단위로 분리하여 오탐 방지)
+    words = re.findall(r'[\uac00-\ud7a3]+', combined_text) # 한글 단어만 추출
     for word in words:
+        # 단어가 지역 이름으로 시작하는 경우를 찾음
         candidates = [region for region in KOREAN_REGIONS_MAP.keys() if word.startswith(region)]
         if candidates:
-            # 한 단어에서 여러 후보가 있으면 가장 긴 것을 선택
+            # 여러 후보가 있으면 가장 긴 이름(가장 구체적인 지역)을 선택
             longest_region = max(candidates, key=len)
-            # 홀수번째(약칭)에 대응하는 전체 이름 매핑
-            full_region = KOREAN_REGIONS_MAP[longest_region]
-            matches.append(full_region)
+            found_regions.add(KOREAN_REGIONS_MAP[longest_region])
 
-    # 동/읍/면 패턴 추출 (text)
-    address_pattern = r'(\b\w+동|\b\w+읍|\b\w+면)'
-    matches2 = re.findall(address_pattern, text)
-    
-    # 중복 제거 및 리스트 병합
-    unique_addresses = list(dict.fromkeys(matches + matches2))
+    # 2. 읍/면/동 찾기 (단어 경계(\b)를 제거하여 안정성 확보)
+    # 예: '원덕읍향토장학회'에서 '원덕읍'을 찾을 수 있도록 함
+    address_pattern = r'([\uac00-\ud7a3]{2,5}(?:동|읍|면))'
+    eup_myeon_dong_matches = re.findall(address_pattern, combined_text)
+    for match in eup_myeon_dong_matches:
+        found_regions.add(match)
 
-    # 운영기관명에서 주소 추출
-    if org_name:
-        org_words = re.findall(r'\b[\uac00-\ud7a3]+\b', org_name)
-        for word in org_words:
-            candidates = [region for region in KOREAN_REGIONS_MAP.keys() if word.startswith(region)]
-            if candidates:
-                longest_region = max(candidates, key=len)
-                full_region = KOREAN_REGIONS_MAP[longest_region]
-                unique_addresses.append(full_region)
-        # 동/읍/면 패턴 추출 (org_name)
-        org_matches = re.findall(address_pattern, org_name)
-        unique_addresses.extend(org_matches)
-
-    # 중복 제거
-    unique_addresses = list(dict.fromkeys(unique_addresses))
-    return unique_addresses if unique_addresses else None
+    return list(found_regions) if found_regions else None
 
 # 테스트 실행 부분
 if __name__ == "__main__":
