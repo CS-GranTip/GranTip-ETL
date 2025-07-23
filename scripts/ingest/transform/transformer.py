@@ -1,4 +1,4 @@
-from typing import Tuple, Optional, List, Dict, Any
+from typing import Tuple, Optional, List, Dict, Any, Set
 
 from pydantic import ValidationError
 
@@ -18,7 +18,7 @@ from pathlib import Path
 
 def parse_selection_personnel(text: Optional[str]) -> Tuple[Optional[int], Optional[Dict[str, int]]]:
     """
-    '분리 후 정복' 전략으로 안정성을 확보한 최종 파서입니다.
+    선발인원 상세내용을 파싱합니다.
     """
     if not text:
         return None, None
@@ -121,63 +121,86 @@ def check_duplicate_support_restriction(text: Optional[str]) -> bool:
 def extract_region_links(
     scholarship_id: int,
     raw_text: Optional[str],
+    org_text: Optional[str],
     sido_map: Dict[str, int],
     all_sigungus_map: Dict[str, List[Dict[str, int]]],
-    id_to_region_map: Dict[int, Any]
+    all_eupmyeondongs_map: Dict[str, List[Dict[str, Any]]],
+    id_to_region_map: Dict[str, Any]
 ) -> List[ScholarshipRegion]:
     """
-    시/도 맵, 시/군/구 역방향 맵, ID-객체 맵을 사용하여
-    텍스트에서 올바른 지역 ID와 그 부모 ID까지 찾아 객체 리스트를 생성합니다.
+    재귀(Recursion) 방식을 사용하여, 발견된 지역의 모든 상위 부모 지역을
+    더욱 안정적으로 함께 추가하도록 개선합니다.
     """
     if not raw_text:
         return []
 
-    parsed_region_names = address_parser(raw_text)
+    parsed_region_names = address_parser(text=raw_text, org_name=org_text)
     if not parsed_region_names:
         return []
 
-    links = []
-    found_ids = set()
+    links: List[ScholarshipRegion] = []
+    found_ids: Set[int] = set()
 
-    # 텍스트에서 명시적으로 언급된 모든 시/도 ID를 먼저 찾기
-    found_sido_ids_in_text = set()
+    # --- 재귀 방식으로 부모 지역을 모두 추가하는 헬퍼 함수 ---
+    def add_with_parents_recursive(region_id: Optional[int]):
+        # region_id가 없거나, 이미 추가된 ID라면 재귀를 종료
+        if region_id is None or region_id in found_ids:
+            return
+
+        # 현재 ID를 추가
+        found_ids.add(region_id)
+        links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=region_id))
+
+        # 현재 지역의 정보에서 부모 ID를 찾아, 부모에 대해 재귀 호출
+        region_info = id_to_region_map.get(str(region_id))
+        if region_info:
+            add_with_parents_recursive(region_info.get('parent_id'))
+
+    # 텍스트에 언급된 시/도, 시/군/구 이름을 미리 저장하여 문맥으로 활용
+    sidos_in_text = {name for name in parsed_region_names if name in sido_map}
+    sigungus_in_text = {name for name in parsed_region_names if name in all_sigungus_map}
+
+    # --- 1. 읍/면/동 (가장 구체적인 단위) 먼저 처리 ---
     for name in parsed_region_names:
-        if name in sido_map:
-            sido_id = sido_map[name]
-            if sido_id not in found_ids:
-                links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=sido_id))
-                found_ids.add(sido_id)
-            found_sido_ids_in_text.add(sido_id)
+        if name in all_eupmyeondongs_map:
+            possible_matches = all_eupmyeondongs_map[name]
+            match_to_add = None
+            
+            if len(possible_matches) == 1:
+                match_to_add = possible_matches[0]
+            else:
+                for match in possible_matches:
+                    sido = match.get('sido')
+                    sigungu = match.get('sigungu')
+                    if sido and sigungu and sido in sidos_in_text and sigungu in sigungus_in_text:
+                        match_to_add = match
+                        break
+            
+            if match_to_add:
+                add_with_parents_recursive(match_to_add.get('id'))
 
-    # 텍스트에서 언급된 시/군/구를 찾고, 그 부모 시/도까지 함께 추가
+    # --- 2. 시/군/구 처리 ---
     for name in parsed_region_names:
         if name in all_sigungus_map:
             possible_matches = all_sigungus_map[name]
             match_to_add = None
 
-            # 고유한 이름의 시/군/구 (예: '인제군')
             if len(possible_matches) == 1:
                 match_to_add = possible_matches[0]
-            
-            # 중복된 이름의 시/군/구 (예: '남구'), 문맥 활용
-            elif found_sido_ids_in_text:
+            else:
+                sido_ids_in_text = {sido_map[sido_name] for sido_name in sidos_in_text}
                 for match in possible_matches:
-                    if match['parent_id'] in found_sido_ids_in_text:
+                    if match.get('parent_id') in sido_ids_in_text:
                         match_to_add = match
                         break
             
             if match_to_add:
-                # 시/군/구 ID 추가
-                sigungu_id = match_to_add['id']
-                if sigungu_id not in found_ids:
-                    links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=sigungu_id))
-                    found_ids.add(sigungu_id)
-                
-                # 해당 시/군/구의 부모 시/도 ID도 함께 추가
-                parent_sido_id = match_to_add.get('parent_id')
-                if parent_sido_id and parent_sido_id not in found_ids:
-                    links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=parent_sido_id))
-                    found_ids.add(parent_sido_id)
+                add_with_parents_recursive(match_to_add.get('id'))
+
+    # --- 3. 시/도 처리 ---
+    for name in parsed_region_names:
+        if name in sido_map:
+            add_with_parents_recursive(sido_map[name])
 
     return links
 
@@ -186,6 +209,7 @@ def transform_data(
         cleaned_data: List[Dict[str, Any]],
         sido_map: Dict[str, int],
         all_sigungus_map: Dict[str, List[Dict[str, int]]],
+        all_eupmyeondongs_map: Dict[str, List[Dict[str, Any]]],
         id_to_region_map: Dict[int, Any]
 ) -> Tuple[List[Scholarship], List[GradeCriterion], List[IncomeCriterion], List[GeneralCriterion], List[ScholarshipRegion]]:
     """
@@ -228,8 +252,10 @@ def transform_data(
             region_links = extract_region_links(
                 scholarship_id=temp_id,
                 raw_text=row.get("지역거주여부 상세내용"),
+                org_text=row.get("운영기관명"),
                 sido_map=sido_map,
                 all_sigungus_map=all_sigungus_map,
+                all_eupmyeondongs_map=all_eupmyeondongs_map,
                 id_to_region_map=id_to_region_map
             )
 

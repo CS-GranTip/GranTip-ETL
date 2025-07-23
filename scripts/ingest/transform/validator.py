@@ -69,9 +69,6 @@ def _validate_category_and_criteria_existence(
 
 
 def _validate_recipient_numbers(scholarship: Scholarship) -> bool:
-    """
-    [최종본] 최종 파서가 추출한 정보를 바탕으로, 문맥을 고려하여 검증합니다.
-    """
     total = scholarship.num_of_recipients_total
     categories = scholarship.recipients_by_category
 
@@ -177,11 +174,9 @@ def _validate_region_data(
 ) -> bool:
     """지역 정보의 정합성을 검증합니다."""
     # '지역연고' 장학금인데 지역 정보가 없는 경우
-    if scholarship.scholarship_category == ScholarshipCategory.LOCAL and not scholarship_regions:
-        # 텍스트 자체가 없는 경우는 정상일 수 있으므로 경고하지 않음
-        if scholarship.region_residence_detail:
-            #logger.warning(f"{_log_prefix(scholarship)}: '지역연고' 장학금이지만, 텍스트에서 지역 정보를 추출하지 못했습니다.")
-            return False
+    if scholarship.scholarship_category == ScholarshipCategory.LOCAL and not scholarship_regions and scholarship.region_residence_detail:
+        #logger.warning(f"{_log_prefix(scholarship)}: '지역연고' 장학금이지만, 텍스트에서 지역 정보를 추출하지 못했습니다.")
+        return False
 
     # 자식 지역(시/군/구)은 있는데 부모 지역(시/도)이 없는 경우 (계층 구조 무결성)
     if scholarship_regions and id_to_region_map:
