@@ -33,9 +33,9 @@ def collect_data(page, perPage=10):
         logger.error(f"API 요청 오류:{e}")
         return None
     
-def collect_all_data(perPage=100):
+def collect_all_data(perPage=1000):
     """
-    모든 페이지의 데이터를 수집하는 함수.
+    모든 페이지의 데이터를 수집하는 함수
     
     :param perPage: 페이지당 조회할 데이터 수
     :return: 모든 페이지로부터 수집된 데이터 리스트

@@ -1,4 +1,4 @@
-from typing import Tuple, Optional, List, Dict, Any
+from typing import Tuple, Optional, List, Dict, Any, Set
 
 from pydantic import ValidationError
 
@@ -18,174 +18,189 @@ from pathlib import Path
 
 def parse_selection_personnel(text: Optional[str]) -> Tuple[Optional[int], Optional[Dict[str, int]]]:
     """
-    OpenAPI의 선발인원 상세내용을 파싱하여 구조화된 데이터를 반환합니다.
-    '○' 형식으로 구분된 경우를 우선 처리하며, 기존 패턴도 유지합니다.
-    예: "○ 12명 ○ 국내: 20명 총 32명" -> (32, {'국내': 20})
+    선발인원 상세내용을 파싱합니다.
     """
-    if text is None:
+    if not text:
         return None, None
     
+    if '각' in text and '씩' in text: # ex: 각 2명씩
+        total_match = re.search(r'총\s*(\d+)\s*명', text)
+        if total_match:
+            # '총 O명'이 명시된 경우, 카테고리 파싱을 생략하고 total만 반환하여 불일치 검증을 피함
+            return int(total_match.group(1)), None
+
+    # 전처리: '00명' 제거 및 공백 정리
+    text = text.replace('00명', '').strip()
     categorized: Dict[str, int] = {}
-    
-    # '○'으로 분할하여 각 그룹 처리
-    groups = re.split(r'○', text.strip())
-    
-    for group in groups:
-        group = group.strip()
-        if not group:
-            continue
-        # 각 그룹에서 숫자와 '명' 추출
-        match = re.search(r'(\d+)\s*명', group)
-        if match:
-            num = int(match.group(1))
-            # 카테고리 추출: 숫자 앞의 텍스트를 키로 사용 
-            category_text = group[:match.start()].strip().rstrip(':')  # 콜론 제거
-            if category_text:
-                key = category_text.strip().lower().replace(' ', '_')
-                # '총' 키를 'total'로 매핑
-                if key == '총':
-                    key = 'total'
-                categorized[key] = num
-            # 카테고리 없으면 total로 통합 (기존 값에 더함)
-            else:
-                if 'total' in categorized:
-                    categorized['total'] += num
-                else:
-                    categorized['total'] = num
-    
-    # 총 인원 직접 추출 (우선 적용, 오버라이드)
+    total = None
+
+    # 1. 명시적인 '총 O명'을 찾아 total로 확정하고, 텍스트에서 해당 부분 제거
     total_match = re.search(r'총\s*(\d+)\s*명', text)
     if total_match:
         total = int(total_match.group(1))
-    elif categorized:
+        text = text.replace(total_match.group(0), '')
+
+    # 내부 함수: 주어진 텍스트에서 '카테고리 O명' 패턴을 찾아 categorized에 추가
+    def find_and_add_categories(sub_text: str):
+        # 'A 10명', 'B: 20명', 'C/30명' 등 다양한 구분자 처리
+        pattern = r'([\w\s·/]+?)\s*[:/]?\s*(\d+)\s*명'
+        matches = re.findall(pattern, sub_text)
+        for cat_text, num_str in matches:
+            # 불필요한 키워드와 공백 제거
+            key = re.sub(r'총|포함|제외|내외|이내|선발|정도|각', '', cat_text).strip()
+            if key and not key.isdigit() and '명' not in key:
+                categorized[key] = int(num_str)
+
+    # 2. 괄호 안의 내용을 먼저 파싱하고, 텍스트에서 제거
+    paren_matches = re.findall(r'\(([^)]+)\)', text)
+    for content in paren_matches:
+        find_and_add_categories(content)
+    text = re.sub(r'\([^)]+\)', '', text) # 괄호와 내용 모두 제거
+
+    # 3. 괄호가 제거된 나머지 텍스트를 파싱
+    find_and_add_categories(text)
+    
+    # 4. 명시적 '총'이 없었고, 카테고리가 존재하면 합계를 total로 추론
+    if total is None and categorized:
         total = sum(categorized.values())
-    else:
-        total = None
-    
-    # 추가: 괄호 안 / 구분된 카테고리 파싱 (콜론 없음)
-    inner_match = re.search(r'\(([^)]+)\)', text)
-    if inner_match:
-        inner = inner_match.group(1)
-        inner_pattern = r'/?\s*([^/]+?)\s*(\d+)\s*명'
-        inner_matches = re.findall(inner_pattern, inner)
-        for cat, num in inner_matches:
-            key = cat.strip().lower().replace(' ', '_')
-            categorized[key] = int(num)
-    
-    # --- total 계산 및 categorized 정리 ---
 
-    # 1. 텍스트에서 명시적인 '총 O명'을 찾아 total로 우선 설정
-    total_match = re.search(r'총\s*(\d+)\s*명', text)
-    if total_match:
-        total = int(total_match.group(1))
-    # 2. 명시적인 '총'이 없으면, 파싱된 딕셔너리에서 'total' 키 값을 사용
-    elif 'total' in categorized:
-        total = categorized['total']
-    # 3. 그것도 없으면, 카테고리별 인원을 모두 합산하여 total 계산
-    elif categorized:
-        # 'total'이 아닌 다른 키들의 값을 합산
-        total = sum(v for k, v in categorized.items() if k != 'total')
-    else:
-        total = None
-
-    # 'total' 키를 categorized 딕셔너리에서 최종적으로 제거
-    if 'total' in categorized:
-        del categorized['total']
-
-    # categorized가 비어있으면 None으로, 아니면 그대로 사용
     final_categorized = categorized if categorized else None
     
     return total, final_categorized
 
 def check_duplicate_support_restriction(text: Optional[str]) -> bool:
-    """자격제한 상세내용을 분석하여 중복수혜 제한 여부를 반환합니다."""
+    """
+    긍정/부정 패턴을 모두 탐색하고 가중치를 부여하여 최종 판단.
+    '금지' 패턴이 하나라도 존재하면 '제한(True)'으로 판단하는 것을 우선한다.
+    """
     if not text:
         return False
 
-    # 1. '생활비' 장학금은 중복수혜가 허용되는 경우가 많으므로 예외 처리
-    if '생활비' in text and ('가능' in text or '중복지원 가능' in text):
-        return False
-
-    # 2. 제한을 나타내는 핵심 키워드 목록
-    restriction_keywords = [
-        '중복', '이중', '비수혜자', '수혜자 제외',
-        '타 장학금', '타장학금', '다른 장학금', '타처에서',
-        '등록금 범위', '학비 면제', '전액 지원',
-        '기수혜자',   '재신청', '수여자', '지원받는 자'
+    # 허용을 의미하는 패턴 목록
+    permission_patterns = [
+        r'중복\s*(수혜|지원)[이가]?\s*가능',
+        r'등록금\s*범위\s*내',
+        r'차액만\s*지급',
     ]
 
-    # 명시적으로 '허용'이나 '가능'을 언급하는지 확인 ("중복 수혜 가능" 같은 문장을 False로 처리하기 위함)
-    if '중복' in text and '가능' in text:
-        return False
-    if '중복' in text and '허용' in text:
-        return False
+    # 금지를 의미하는 패턴 목록
+    prohibition_patterns = [
+        r'중복\s*(수혜|지원|선발|지급|신청)\s*불가',
+        r'중복\s*(수혜|지원)\s*금지',
+        r'이중\s*(수혜|지원)\s*금지',
+        r'(수혜|지원|선발)자\s*제외',
+        r'1세대\s*1명만',
+        r'한\s*종류만\s*수혜',
+        # '가능'이 포함되지만 실제로는 금지인 경우
+        r'가능하나\s*[^.]*?(불가|없음|제한|안됨)',
+    ]
 
-    # 제한 키워드가 하나라도 포함되면 True로 판단
-    if any(keyword in text for keyword in restriction_keywords):
+    # 텍스트에서 각 패턴의 발견 여부 확인
+    is_permission_found = any(re.search(pattern, text) for pattern in permission_patterns)
+    is_prohibition_found = any(re.search(pattern, text) for pattern in prohibition_patterns)
+
+    # --- 최종 판단 로직 ---
+    # 1. 금지 패턴이 하나라도 발견되면, 일부 허용 조항이 있더라도 '제한'으로 간주 (True)
+    if is_prohibition_found:
         return True
 
+    # 2. 금지 패턴은 없지만, 명백한 허용 패턴이 발견되면 '허용' (False)
+    if is_permission_found:
+        return False
+
+    # 3. 명확한 허용/금지 패턴은 없지만, 일반적인 제한 키워드가 있다면 '제한'으로 간주 (True)
+    general_restriction_keywords = [
+        '타 장학금', '타장학금', '다른 장학금', '기수혜자', '이중지원'
+    ]
+    if any(keyword in text for keyword in general_restriction_keywords):
+        return True
+
+    # 4. 위의 모든 경우에 해당하지 않으면 제한 없음 (False)
     return False
 
 def extract_region_links(
     scholarship_id: int,
     raw_text: Optional[str],
+    org_text: Optional[str],
     sido_map: Dict[str, int],
     all_sigungus_map: Dict[str, List[Dict[str, int]]],
-    id_to_region_map: Dict[int, Any]
+    all_eupmyeondongs_map: Dict[str, List[Dict[str, Any]]],
+    id_to_region_map: Dict[str, Any]
 ) -> List[ScholarshipRegion]:
     """
-    시/도 맵, 시/군/구 역방향 맵, ID-객체 맵을 사용하여
-    텍스트에서 올바른 지역 ID와 그 부모 ID까지 찾아 객체 리스트를 생성합니다.
+    재귀(Recursion) 방식을 사용하여, 발견된 지역의 모든 상위 부모 지역을
+    더욱 안정적으로 함께 추가하도록 개선합니다.
     """
     if not raw_text:
         return []
 
-    parsed_region_names = address_parser(raw_text)
+    parsed_region_names = address_parser(text=raw_text, org_name=org_text)
     if not parsed_region_names:
         return []
 
-    links = []
-    found_ids = set()
+    links: List[ScholarshipRegion] = []
+    found_ids: Set[int] = set()
 
-    # 텍스트에서 명시적으로 언급된 모든 시/도 ID를 먼저 찾기
-    found_sido_ids_in_text = set()
+    # --- 재귀 방식으로 부모 지역을 모두 추가하는 헬퍼 함수 ---
+    def add_with_parents_recursive(region_id: Optional[int]):
+        # region_id가 없거나, 이미 추가된 ID라면 재귀를 종료
+        if region_id is None or region_id in found_ids:
+            return
+
+        # 현재 ID를 추가
+        found_ids.add(region_id)
+        links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=region_id))
+
+        # 현재 지역의 정보에서 부모 ID를 찾아, 부모에 대해 재귀 호출
+        region_info = id_to_region_map.get(str(region_id))
+        if region_info:
+            add_with_parents_recursive(region_info.get('parent_id'))
+
+    # 텍스트에 언급된 시/도, 시/군/구 이름을 미리 저장하여 문맥으로 활용
+    sidos_in_text = {name for name in parsed_region_names if name in sido_map}
+    sigungus_in_text = {name for name in parsed_region_names if name in all_sigungus_map}
+
+    # --- 1. 읍/면/동 (가장 구체적인 단위) 먼저 처리 ---
     for name in parsed_region_names:
-        if name in sido_map:
-            sido_id = sido_map[name]
-            if sido_id not in found_ids:
-                links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=sido_id))
-                found_ids.add(sido_id)
-            found_sido_ids_in_text.add(sido_id)
+        if name in all_eupmyeondongs_map:
+            possible_matches = all_eupmyeondongs_map[name]
+            match_to_add = None
+            
+            if len(possible_matches) == 1:
+                match_to_add = possible_matches[0]
+            else:
+                for match in possible_matches:
+                    sido = match.get('sido')
+                    sigungu = match.get('sigungu')
+                    if sido and sigungu and sido in sidos_in_text and sigungu in sigungus_in_text:
+                        match_to_add = match
+                        break
+            
+            if match_to_add:
+                add_with_parents_recursive(match_to_add.get('id'))
 
-    # 텍스트에서 언급된 시/군/구를 찾고, 그 부모 시/도까지 함께 추가
+    # --- 2. 시/군/구 처리 ---
     for name in parsed_region_names:
         if name in all_sigungus_map:
             possible_matches = all_sigungus_map[name]
             match_to_add = None
 
-            # 고유한 이름의 시/군/구 (예: '인제군')
             if len(possible_matches) == 1:
                 match_to_add = possible_matches[0]
-            
-            # 중복된 이름의 시/군/구 (예: '남구'), 문맥 활용
-            elif found_sido_ids_in_text:
+            else:
+                sido_ids_in_text = {sido_map[sido_name] for sido_name in sidos_in_text}
                 for match in possible_matches:
-                    if match['parent_id'] in found_sido_ids_in_text:
+                    if match.get('parent_id') in sido_ids_in_text:
                         match_to_add = match
                         break
             
             if match_to_add:
-                # 시/군/구 ID 추가
-                sigungu_id = match_to_add['id']
-                if sigungu_id not in found_ids:
-                    links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=sigungu_id))
-                    found_ids.add(sigungu_id)
-                
-                # 해당 시/군/구의 부모 시/도 ID도 함께 추가
-                parent_sido_id = match_to_add.get('parent_id')
-                if parent_sido_id and parent_sido_id not in found_ids:
-                    links.append(ScholarshipRegion(scholarship_id=scholarship_id, region_id=parent_sido_id))
-                    found_ids.add(parent_sido_id)
+                add_with_parents_recursive(match_to_add.get('id'))
+
+    # --- 3. 시/도 처리 ---
+    for name in parsed_region_names:
+        if name in sido_map:
+            add_with_parents_recursive(sido_map[name])
 
     return links
 
@@ -194,6 +209,7 @@ def transform_data(
         cleaned_data: List[Dict[str, Any]],
         sido_map: Dict[str, int],
         all_sigungus_map: Dict[str, List[Dict[str, int]]],
+        all_eupmyeondongs_map: Dict[str, List[Dict[str, Any]]],
         id_to_region_map: Dict[int, Any]
 ) -> Tuple[List[Scholarship], List[GradeCriterion], List[IncomeCriterion], List[GeneralCriterion], List[ScholarshipRegion]]:
     """
@@ -236,8 +252,10 @@ def transform_data(
             region_links = extract_region_links(
                 scholarship_id=temp_id,
                 raw_text=row.get("지역거주여부 상세내용"),
+                org_text=row.get("운영기관명"),
                 sido_map=sido_map,
                 all_sigungus_map=all_sigungus_map,
+                all_eupmyeondongs_map=all_eupmyeondongs_map,
                 id_to_region_map=id_to_region_map
             )
 

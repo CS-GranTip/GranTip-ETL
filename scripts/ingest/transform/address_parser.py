@@ -283,11 +283,12 @@ KOREAN_REGIONS_MAP = {
 import re
 from typing import Optional, List
 
-def address_parser(text: Optional[str]) -> Optional[List[str]]:
+def address_parser(text: Optional[str], org_name: Optional[str] = None) -> Optional[List[str]]:
     """
     OpenAPI의 지역거주여부 상세내용을 받아온 후 해당 내용 중에서 주소지만 추출
     예:○ 장학생 선발 공고일 1년 전부터 부모 또는 본인이 청양군에 주소를 두고 거주한 자 > '청양군'
     예:○ 보호자 또는 본인이 선발 공고일 현재 주민등록상 주소지가 광주광역시 남구로 1년 이상 두고 신청 요건을 갖춘 자 > '광주광역시','남구'
+    '관내'가 포함된 경우 운영기관명에서 추가로 주소 추출
     """
     if text is None:
         return None
@@ -305,29 +306,43 @@ def address_parser(text: Optional[str]) -> Optional[List[str]]:
             full_region = KOREAN_REGIONS_MAP[longest_region]
             matches.append(full_region)
 
-    address_pattern = r'(\b\w+동|\b\w+리|\b\w+읍|\b\w+면)'
+    # 동/읍/면 패턴 추출 (text)
+    address_pattern = r'(\b\w+동|\b\w+읍|\b\w+면)'
     matches2 = re.findall(address_pattern, text)
-
-    # 중복 제거 및 리스트 반환 (순서 유지)
-    unique_addresses = list(dict.fromkeys(matches))
-    unique_addresses += list(dict.fromkeys(matches2))
-
-        
     
+    # 중복 제거 및 리스트 병합
+    unique_addresses = list(dict.fromkeys(matches + matches2))
+
+    # 운영기관명에서 주소 추출
+    if org_name:
+        org_words = re.findall(r'\b[\uac00-\ud7a3]+\b', org_name)
+        for word in org_words:
+            candidates = [region for region in KOREAN_REGIONS_MAP.keys() if word.startswith(region)]
+            if candidates:
+                longest_region = max(candidates, key=len)
+                full_region = KOREAN_REGIONS_MAP[longest_region]
+                unique_addresses.append(full_region)
+        # 동/읍/면 패턴 추출 (org_name)
+        org_matches = re.findall(address_pattern, org_name)
+        unique_addresses.extend(org_matches)
+
+    # 중복 제거
+    unique_addresses = list(dict.fromkeys(unique_addresses))
     return unique_addresses if unique_addresses else None
 
-# 테스트 실행 부분 (OpenAPI 데이터로 테스트)
+# 테스트 실행 부분
 if __name__ == "__main__":
-    # OpenAPI에서 데이터 수집 (페이지 0, 15개 항목 가져옴; 필요시 조정)
-    api_data = collect_data(page=3, perPage=50)
+    # OpenAPI에서 데이터 수집 (페이지 14, 100개 항목 가져옴)
+    api_data = collect_data(page=14, perPage=100)
     
     if api_data:
         for item in api_data:
             scholarship_id = item.get('번호', 0)  # ID 추출
-            raw_text = item.get('지역거주여부 상세내용', '')  #  텍스트 추출 (API 응답 필드명 확인)
+            raw_text = item.get('지역거주여부 상세내용', '')  # 텍스트 추출
+            org_name = item.get('운영기관명', '')  # 운영기관명 추출
             if raw_text:
-                result = address_parser(raw_text)
-                print(f"\n테스트 ID: {scholarship_id}, 입력 텍스트: '{raw_text}'")
-                print(result)  # 딕셔너리 직접 출력
+                result = address_parser(raw_text, org_name)
+                print(f"\n테스트 ID: {scholarship_id}, 입력 텍스트: '{raw_text}', 운영기관명: '{org_name}'")
+                print(result)
     else:
         print("API에서 데이터를 가져오지 못했습니다.")

@@ -35,17 +35,17 @@ def load_region_maps_from_cache():
             maps = json.load(f)
 
             # JSON에서 id_to_region_map의 key는 문자열이므로, 다시 정수형으로 변환
-            maps['id_to_region_map'] = {int(k): v for k, v in maps['id_to_region_map'].items()}
+            #maps['id_to_region_map'] = {int(k): v for k, v in maps['id_to_region_map'].items()}
             
             logger.info("✅ 지역 맵 캐시 로드 완료.")
-            return maps['sido_map'], maps['sigungus_map'], maps['id_to_region_map']
+            return maps['sido_map'], maps['sigungus_map'], maps['eupmyeondong_map'], maps['id_to_region_map']
     except FileNotFoundError:
         logger.error(f"캐시 파일을 찾을 수 없습니다: {REGION_CACHE_PATH}")
         logger.error("먼저 `cache_region_maps.py` 스크립트를 실행하여 캐시 파일을 생성해주세요.")
-        return None, None, None
+        return None, None, None, None
     except Exception as e:
         logger.error(f"캐시 파일 로드 중 오류 발생: {e}")
-        return None, None, None
+        return None, None, None, None
     
 def validate_all_data(scholarships, all_grade_criteria, all_income_criteria, all_general_criteria, all_region_links, id_to_region_map):
     """
@@ -112,7 +112,7 @@ def validate_all_data(scholarships, all_grade_criteria, all_income_criteria, all
     return valid_scholarships, valid_grade_criteria, valid_income_criteria, valid_general_criteria, valid_region_links
 
 
-def run_pipeline(sido_map, sigungus_map, id_to_region_map):
+def run_pipeline(sido_map, sigungus_map, eupmyeondongs_map, id_to_region_map):
     """전체 데이터 처리 파이프라인을 실행합니다."""
     print("데이터 처리 파이프라인을 시작합니다.")
 
@@ -136,6 +136,7 @@ def run_pipeline(sido_map, sigungus_map, id_to_region_map):
         cleaned_data=cleaned_data,
         sido_map=sido_map,
         all_sigungus_map=sigungus_map,
+        all_eupmyeondongs_map=eupmyeondongs_map,
         id_to_region_map=id_to_region_map
     )
     logger.info(f"✅ 총 {len(scholarships)}개의 장학금 객체 변환 완료")
@@ -218,7 +219,7 @@ def run_scheduled_job():
     logger.info("--- 스케줄링 작업 시작 ---")
     if check_for_updates():
         logger.info("전체 데이터 처리 파이프라인을 시작합니다.")
-        run_pipeline(REGION_SIDO_MAP, REGION_SIGUNGUS_MAP, REGION_ID_MAP)
+        run_pipeline(REGION_SIDO_MAP, REGION_SIGUNGUS_MAP, RESION_EUPMYEONDONG_MAP, REGION_ID_MAP)
     else:
         logger.info("변경 사항이 없어 파이프라인을 실행하지 않고 작업을 종료합니다.")
     logger.info("--- 스케줄링 작업 종료 ---")
@@ -226,7 +227,7 @@ def run_scheduled_job():
 
 if __name__ == "__main__":
     # 캐시 파일에서 지역 정보를 미리 로드
-    REGION_SIDO_MAP, REGION_SIGUNGUS_MAP, REGION_ID_MAP = load_region_maps_from_cache()
+    REGION_SIDO_MAP, REGION_SIGUNGUS_MAP, RESION_EUPMYEONDONG_MAP, REGION_ID_MAP = load_region_maps_from_cache()
     
     """
     if not REGION_ID_MAP:
@@ -251,4 +252,4 @@ if __name__ == "__main__":
             scheduler.shutdown()
     """
     if REGION_ID_MAP:
-        run_pipeline(REGION_SIDO_MAP, REGION_SIGUNGUS_MAP, REGION_ID_MAP)
+        run_pipeline(REGION_SIDO_MAP, REGION_SIGUNGUS_MAP, RESION_EUPMYEONDONG_MAP, REGION_ID_MAP)
