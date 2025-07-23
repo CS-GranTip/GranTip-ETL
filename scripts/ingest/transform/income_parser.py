@@ -6,7 +6,9 @@ from enums import QualificationCode, AidType
 
 # 키워드와 Enum 코드를 매핑
 QUALIFICATION_KEYWORDS = {
-    QualificationCode.LOW_INCOME: ['기초생활수급자', '수급자', '차상위', '저소득', '생계급여', '의료급여', '주거급여', '교육급여', '서민'],
+    QualificationCode.LOW_INCOME: ['기초생활수급자', '수급자', '차상위', '저소득', '생계급여', '의료급여',
+                                    '주거급여', '교육급여', '서민', '학비조달', '경제적',
+                                   re.compile(r'(가정|경제|생활)\s*(사정|형편)')],
     QualificationCode.MULTI_CHILD: ['다자녀'],
     QualificationCode.SINGLE_PARENT: ['한부모', '모·부자'],
     QualificationCode.BOY_GIRL_HEADED: ['소년소녀', '청소년 가장'],
@@ -21,14 +23,23 @@ QUALIFICATION_KEYWORDS = {
 PREFERENCE_KEYWORDS = ["우선", "가산점", "우대", "권고"]
 LIVING_AID_KEYWORDS = ['생활비', '생활지원금']
 TUITION_AID_KEYWORDS = ['학자금']
+OTHER_INCOME_RULE_KEYWORDS = ['건강보험료', '재산세']
 
 def _extract_qualifications(text: str) -> Set[QualificationCode]:
     """텍스트에서 자격 조건 키워드를 찾아 Enum Set으로 반환"""
     found_quals = set()
     for code, keywords in QUALIFICATION_KEYWORDS.items():
         for keyword in keywords:
-            if keyword in text:
-                found_quals.add(code)
+            # 항목이 문자열이면 in 연산자로 확인
+            if isinstance(keyword, str):
+                if keyword in text:
+                    found_quals.add(code)
+                    break
+            # 항목이 정규식 패턴이면 search로 확인
+            elif isinstance(keyword, re.Pattern):
+                if keyword.search(text):
+                    found_quals.add(code)
+                    break
     return found_quals
 
 def extract_income_criteria(scholarship_id: int, raw_text: Optional[str]) -> Dict[str, List]:
@@ -73,14 +84,16 @@ def extract_income_criteria(scholarship_id: int, raw_text: Optional[str]) -> Dic
             current_aid_type = AidType.LIVING
         elif any(f"{keyword} :" in clean_text for keyword in TUITION_AID_KEYWORDS):
             current_aid_type = AidType.TUITION
-    
-        # --- [수정된 핵심 로직] ---
         
         # 정량적 기준 추출: 모든 검색 결과를 독립적인 `_match` 변수에 저장합니다.
         range_match = re.search(r'소득\s*분위\s*[\d-]+\s*~\s*(\d+)\s*구간', clean_text)
         interval_match = re.search(r'(\d+)\s*구간', clean_text)
         band_match = re.search(r'(\d+)\s*분위', clean_text)
         ratio_match = re.search(r'중위소득\s*(\d+)', clean_text)
+        median_income_ratio_value = int(ratio_match.group(1)) if ratio_match else None
+
+        if median_income_ratio_value is None and '기준중위소득' in clean_text:
+            median_income_ratio_value = 100
 
         # '소득분위 X~Y 구간' 형태의 범위를 먼저 체크
         if range_match:
@@ -92,9 +105,11 @@ def extract_income_criteria(scholarship_id: int, raw_text: Optional[str]) -> Dic
 
         
         # 소득/재산 관련 규칙 존재 여부 판단
-        has_income_rule = any([interval_match, band_match, ratio_match])
+        has_income_rule = any([interval_match, band_match, median_income_ratio_value is not None])
+        has_other_income_rule = any(keyword in clean_text for keyword in OTHER_INCOME_RULE_KEYWORDS)
+        is_low_income_qual = QualificationCode.LOW_INCOME in qualifications
         # 소득 무관은 무조건 IncomeCriterion으로 분기
-        if is_ignored or has_income_rule:
+        if is_ignored or has_income_rule or has_other_income_rule or is_low_income_qual:
             req_quals = sorted(list(qualifications)) if not is_final_preference else []
             pref_quals = sorted(list(qualifications)) if is_final_preference else []
 
@@ -108,7 +123,7 @@ def extract_income_criteria(scholarship_id: int, raw_text: Optional[str]) -> Dic
                 ignore_income_and_assets=is_ignored,
                 scholarship_support_interval=int(interval_match.group(1)) if interval_match else None,
                 income_percentile_band=int(band_match.group(1)) if band_match else None,
-                median_income_ratio=int(ratio_match.group(1)) if ratio_match else None,
+                median_income_ratio=median_income_ratio_value
             )
             income_criteria.append(income_criterion)
             priority_counter += 1
@@ -133,6 +148,7 @@ def extract_income_criteria(scholarship_id: int, raw_text: Optional[str]) -> Dic
     }
 
 if __name__ == "__main__":
+    """
     test_cases = [
         # --- 실제 데이터 기반 테스트 케이스 ---
         {"id": 1, "description": "조건부 소득 기준 (장애)", "raw_text": "○ 취약계층(장애가정) : 본인 또는 부양의무자가 장애인으로 부양의무자의 합산 월 소득이 기준 중위소득 70%(학자금지원구간 3구간이내)이하 장애가족 자녀"},
@@ -142,15 +158,26 @@ if __name__ == "__main__":
         {"id": 5, "description": "순위/우선 혼합 규칙", "raw_text": "○ 1순위 : 기초생활수급지/차상위/한부모가족 우선 선발○ 2순위 : 2024 기준중위소득 100%이하"},
         {"id": 6, "description": "여러 줄 복합 규칙", "raw_text": "○ 신입생 기준중위소득 100%이하○ 재학생 한국장학재단 학자금 지원구간 5구간 이내"},
         {"id": 7, "description": "건강보험료/재산세 기준", "raw_text": "○ 건강보험료 지역 12만원/직장 7만원 이하인 해당학생\n○ 재산세 50만원 이하"},
+        {"id": 8, "description": "실패1", "raw_text": "○ 기초생활수급자/ 차상위계층권 대상자"},
+        {"id": 9, "description": "실패2", "raw_text": "○ 저소득 가정  기초생활수급자·법정차상위계층·한부모가족·장애인연금수급자"},
+    ]
+    """
+    test_cases = [
+        # --- 실제 데이터 기반 테스트 케이스 ---
+        {"id": 1, "raw_text": "○ 가정형편이 넉넉하지 못한 자"},
+        {"id": 2, "raw_text": "○ 가정형편이 어려운 학생 우선선발"},
+        {"id": 3, "raw_text": "○ 기타 가정형편이 어려운 자(증빙할 수 있는 서류 제출)"},
+        {"id": 4, "raw_text": "○ 가정형펀(경제적)이 어려운 학생"},
+        {"id": 5, "raw_text": "○ 가정 사정으로 인해 학비조달이 어려운 학생"},
+        {"id": 6, "raw_text": "○ 긴급재난/불의의 사고 및 그 밖의 사정 등으로 인하여 생활형편이 곤란하다고 인정되는 자"},
+        {"id": 7, "raw_text": "○ 건강보험료 35만원 이내 납부 가정 자녀"},
+        {"id": 8, "raw_text": "○ 부모의 건강보험료 납부액(2024년 1월~12월) 평균금액으로 평가"},
+        {"id": 9, "raw_text": "○ 재산세 10만원 미만을 납부하고 있는 가정형편이 어려운 학생"},
     ]
 
-    print("="*60)
-    print("Income Parser 실제 데이터 기반 테스트를 시작합니다...")
-    print("="*60)
-
     for case in test_cases:
-        test_id, description, raw_text = case["id"], case["description"], case["raw_text"]
-        print(f"\n--- [TEST CASE {test_id}: {description}] ---")
+        test_id, raw_text = case["id"], case["raw_text"]
+        print(f"\n--- [TEST CASE {test_id}]  ---")
         print(f"INPUT: \"{raw_text}\"")
         
         result = extract_income_criteria(test_id, raw_text)
