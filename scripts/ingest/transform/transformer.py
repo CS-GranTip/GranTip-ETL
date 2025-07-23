@@ -18,112 +18,104 @@ from pathlib import Path
 
 def parse_selection_personnel(text: Optional[str]) -> Tuple[Optional[int], Optional[Dict[str, int]]]:
     """
-    OpenAPI의 선발인원 상세내용을 파싱하여 구조화된 데이터를 반환합니다.
-    '○' 형식으로 구분된 경우를 우선 처리하며, 기존 패턴도 유지합니다.
-    예: "○ 12명 ○ 국내: 20명 총 32명" -> (32, {'국내': 20})
+    '분리 후 정복' 전략으로 안정성을 확보한 최종 파서입니다.
     """
-    if text is None:
+    if not text:
         return None, None
     
+    if '각' in text and '씩' in text: # ex: 각 2명씩
+        total_match = re.search(r'총\s*(\d+)\s*명', text)
+        if total_match:
+            # '총 O명'이 명시된 경우, 카테고리 파싱을 생략하고 total만 반환하여 불일치 검증을 피함
+            return int(total_match.group(1)), None
+
+    # 전처리: '00명' 제거 및 공백 정리
+    text = text.replace('00명', '').strip()
     categorized: Dict[str, int] = {}
-    
-    # '○'으로 분할하여 각 그룹 처리
-    groups = re.split(r'○', text.strip())
-    
-    for group in groups:
-        group = group.strip()
-        if not group:
-            continue
-        # 각 그룹에서 숫자와 '명' 추출
-        match = re.search(r'(\d+)\s*명', group)
-        if match:
-            num = int(match.group(1))
-            # 카테고리 추출: 숫자 앞의 텍스트를 키로 사용 
-            category_text = group[:match.start()].strip().rstrip(':')  # 콜론 제거
-            if category_text:
-                key = category_text.strip().lower().replace(' ', '_')
-                # '총' 키를 'total'로 매핑
-                if key == '총':
-                    key = 'total'
-                categorized[key] = num
-            # 카테고리 없으면 total로 통합 (기존 값에 더함)
-            else:
-                if 'total' in categorized:
-                    categorized['total'] += num
-                else:
-                    categorized['total'] = num
-    
-    # 총 인원 직접 추출 (우선 적용, 오버라이드)
+    total = None
+
+    # 1. 명시적인 '총 O명'을 찾아 total로 확정하고, 텍스트에서 해당 부분 제거
     total_match = re.search(r'총\s*(\d+)\s*명', text)
     if total_match:
         total = int(total_match.group(1))
-    elif categorized:
+        text = text.replace(total_match.group(0), '')
+
+    # 내부 함수: 주어진 텍스트에서 '카테고리 O명' 패턴을 찾아 categorized에 추가
+    def find_and_add_categories(sub_text: str):
+        # 'A 10명', 'B: 20명', 'C/30명' 등 다양한 구분자 처리
+        pattern = r'([\w\s·/]+?)\s*[:/]?\s*(\d+)\s*명'
+        matches = re.findall(pattern, sub_text)
+        for cat_text, num_str in matches:
+            # 불필요한 키워드와 공백 제거
+            key = re.sub(r'총|포함|제외|내외|이내|선발|정도|각', '', cat_text).strip()
+            if key and not key.isdigit() and '명' not in key:
+                categorized[key] = int(num_str)
+
+    # 2. 괄호 안의 내용을 먼저 파싱하고, 텍스트에서 제거
+    paren_matches = re.findall(r'\(([^)]+)\)', text)
+    for content in paren_matches:
+        find_and_add_categories(content)
+    text = re.sub(r'\([^)]+\)', '', text) # 괄호와 내용 모두 제거
+
+    # 3. 괄호가 제거된 나머지 텍스트를 파싱
+    find_and_add_categories(text)
+    
+    # 4. 명시적 '총'이 없었고, 카테고리가 존재하면 합계를 total로 추론
+    if total is None and categorized:
         total = sum(categorized.values())
-    else:
-        total = None
-    
-    # 추가: 괄호 안 / 구분된 카테고리 파싱 (콜론 없음)
-    inner_match = re.search(r'\(([^)]+)\)', text)
-    if inner_match:
-        inner = inner_match.group(1)
-        inner_pattern = r'/?\s*([^/]+?)\s*(\d+)\s*명'
-        inner_matches = re.findall(inner_pattern, inner)
-        for cat, num in inner_matches:
-            key = cat.strip().lower().replace(' ', '_')
-            categorized[key] = int(num)
-    
-    # --- total 계산 및 categorized 정리 ---
 
-    # 1. 텍스트에서 명시적인 '총 O명'을 찾아 total로 우선 설정
-    total_match = re.search(r'총\s*(\d+)\s*명', text)
-    if total_match:
-        total = int(total_match.group(1))
-    # 2. 명시적인 '총'이 없으면, 파싱된 딕셔너리에서 'total' 키 값을 사용
-    elif 'total' in categorized:
-        total = categorized['total']
-    # 3. 그것도 없으면, 카테고리별 인원을 모두 합산하여 total 계산
-    elif categorized:
-        # 'total'이 아닌 다른 키들의 값을 합산
-        total = sum(v for k, v in categorized.items() if k != 'total')
-    else:
-        total = None
-
-    # 'total' 키를 categorized 딕셔너리에서 최종적으로 제거
-    if 'total' in categorized:
-        del categorized['total']
-
-    # categorized가 비어있으면 None으로, 아니면 그대로 사용
     final_categorized = categorized if categorized else None
     
     return total, final_categorized
 
 def check_duplicate_support_restriction(text: Optional[str]) -> bool:
-    """자격제한 상세내용을 분석하여 중복수혜 제한 여부를 반환합니다."""
+    """
+    긍정/부정 패턴을 모두 탐색하고 가중치를 부여하여 최종 판단.
+    '금지' 패턴이 하나라도 존재하면 '제한(True)'으로 판단하는 것을 우선한다.
+    """
     if not text:
         return False
 
-    # 1. '생활비' 장학금은 중복수혜가 허용되는 경우가 많으므로 예외 처리
-    if '생활비' in text and ('가능' in text or '중복지원 가능' in text):
-        return False
-
-    # 2. 제한을 나타내는 핵심 키워드 목록
-    restriction_keywords = [
-        '중복', '이중', '비수혜자', '수혜자 제외',
-        '타 장학금', '타장학금', '다른 장학금', '타처에서',
-        '등록금 범위', '학비 면제', '전액 지원',
-        '기수혜자',   '재신청', '수여자', '지원받는 자'
+    # 허용을 의미하는 패턴 목록
+    permission_patterns = [
+        r'중복\s*(수혜|지원)[이가]?\s*가능',
+        r'등록금\s*범위\s*내',
+        r'차액만\s*지급',
     ]
 
-    # 명시적으로 '허용'이나 '가능'을 언급하는지 확인 ("중복 수혜 가능" 같은 문장을 False로 처리하기 위함)
-    if '중복' in text and '가능' in text:
-        return False
-    if '중복' in text and '허용' in text:
-        return False
+    # 금지를 의미하는 패턴 목록
+    prohibition_patterns = [
+        r'중복\s*(수혜|지원|선발|지급|신청)\s*불가',
+        r'중복\s*(수혜|지원)\s*금지',
+        r'이중\s*(수혜|지원)\s*금지',
+        r'(수혜|지원|선발)자\s*제외',
+        r'1세대\s*1명만',
+        r'한\s*종류만\s*수혜',
+        # '가능'이 포함되지만 실제로는 금지인 경우
+        r'가능하나\s*[^.]*?(불가|없음|제한|안됨)',
+    ]
 
-    # 제한 키워드가 하나라도 포함되면 True로 판단
-    if any(keyword in text for keyword in restriction_keywords):
+    # 텍스트에서 각 패턴의 발견 여부 확인
+    is_permission_found = any(re.search(pattern, text) for pattern in permission_patterns)
+    is_prohibition_found = any(re.search(pattern, text) for pattern in prohibition_patterns)
+
+    # --- 최종 판단 로직 ---
+    # 1. 금지 패턴이 하나라도 발견되면, 일부 허용 조항이 있더라도 '제한'으로 간주 (True)
+    if is_prohibition_found:
         return True
 
+    # 2. 금지 패턴은 없지만, 명백한 허용 패턴이 발견되면 '허용' (False)
+    if is_permission_found:
+        return False
+
+    # 3. 명확한 허용/금지 패턴은 없지만, 일반적인 제한 키워드가 있다면 '제한'으로 간주 (True)
+    general_restriction_keywords = [
+        '타 장학금', '타장학금', '다른 장학금', '기수혜자', '이중지원'
+    ]
+    if any(keyword in text for keyword in general_restriction_keywords):
+        return True
+
+    # 4. 위의 모든 경우에 해당하지 않으면 제한 없음 (False)
     return False
 
 def extract_region_links(
