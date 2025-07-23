@@ -106,8 +106,8 @@ def validate_all_data(scholarships, all_grade_criteria, all_income_criteria, all
             if temp_s_id in grouped_incomes: valid_income_criteria.extend(grouped_incomes[temp_s_id])
             if temp_s_id in grouped_generals: valid_general_criteria.extend(grouped_generals[temp_s_id])
             if temp_s_id in grouped_regions: valid_region_links.extend(grouped_regions[temp_s_id])
-        else:
-            logger.warning(f"  - 검증 실패: Scholarship Original ID: {s.original_id}, Name: {s.product_name}")
+        #else:
+            #logger.warning(f"  - 검증 실패: Scholarship Original ID: {s.original_id}, Name: {s.product_name}")
 
     return valid_scholarships, valid_grade_criteria, valid_income_criteria, valid_general_criteria, valid_region_links
 

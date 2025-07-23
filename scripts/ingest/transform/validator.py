@@ -176,6 +176,7 @@ def _validate_region_data(
     # '지역연고' 장학금인데 지역 정보가 없는 경우
     if scholarship.scholarship_category == ScholarshipCategory.LOCAL and not scholarship_regions and scholarship.region_residence_detail:
         #logger.warning(f"{_log_prefix(scholarship)}: '지역연고' 장학금이지만, 텍스트에서 지역 정보를 추출하지 못했습니다.")
+        logger.warning(f"{_log_prefix(scholarship)}: "+scholarship.region_residence_detail)
         return False
 
     # 자식 지역(시/군/구)은 있는데 부모 지역(시/도)이 없는 경우 (계층 구조 무결성)
