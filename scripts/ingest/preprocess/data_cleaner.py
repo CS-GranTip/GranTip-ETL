@@ -12,13 +12,12 @@ def parse_university_category(text: Optional[str]) -> List[str]:
     if not text:
         return []
 
-    # 1. 분리에 사용할 모든 키워드를 정의합니다.
+    # 분리에 사용할 모든 키워드를 정의합니다.
     keywords = [
         '4년제(5~6년제포함)', '전문대(2~3년제)', '학점은행제 대학', '일반대학원',
         '전문대학원', '기술대학', '원격대학', '해외대학', '특정대학', '제한없음'
     ]
 
-    # 2. ★★★★★ 핵심 수정사항 ★★★★★
     # 키워드를 길이순으로 내림차순 정렬하고, 각 키워드의 특수 문자를 이스케이프 처리합니다.
     keywords.sort(key=len, reverse=True)
     escaped_keywords = [re.escape(k) for k in keywords]
@@ -114,22 +113,34 @@ def parse_department_category(text: Optional[str]) -> List[str]:
 
 def preprocess_text_field(text: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     """
-    텍스트 필드에서 내용 뒤에 따라오는 비고(※)만 분리합니다.
+    텍스트 필드에서 내용(detail)과 비고(notes)를 분리합니다.
+    분리된 비고 내에 추가적인 '※'가 있다면 쉼표로 변환합니다.
     """
     if not text:
         return None, None
     
     clean_text = text.strip()
 
+    detail = None
+    notes = None
+
     # '※'가 맨 앞이 아니고, 중간에 있을 때만 분리
     if '※' in clean_text and not clean_text.startswith('※'):
         parts = clean_text.split('※', 1)
         detail = parts[0].strip()
-        notes = parts[1].strip()
-        return detail if detail else None, notes if notes else None
+        
+        notes_raw = parts[1].strip()
+        if notes_raw:
+            # 비고 부분에 남아있는 '※'를 ', '로 변환
+            # 여러 개의 '※'와 공백을 깔끔하게 처리하기 위해 split 후 join 사용
+            notes_parts = [p.strip() for p in notes_raw.split('※') if p.strip()]
+            notes = ", ".join(notes_parts)
+
     else:
         # 그 외의 경우 (※가 없거나, 맨 앞에 오는 경우)에는 전체를 detail로 취급
-        return clean_text if clean_text else None, None
+        detail = clean_text
+
+    return (detail if detail else None, notes if notes else None)
     
 # --- url 정제 ---
 def clean_url(url: Optional[str]) -> Optional[str]:
@@ -163,10 +174,31 @@ CATEGORY_PARSERS = {
     '학년구분': parse_grade_category,
     '학과구분': parse_department_category
 }
+
 FIELDS_WITH_NOTES = [
     "성적기준 상세내용", "소득기준 상세내용", "지원내역 상세내용", "특정자격 상세내용", "지역거주여부 상세내용", 
     "선발방법 상세내용", "선발인원 상세내용", "자격제한 상세내용", "추천필요여부 상세내용", "제출서류 상세내용"
 ]
+
+PROVIDER_TYPE_MAP = {
+    "지자체(출자출연기관)": "LOCAL_GOV",
+    "공공기관": "PUBLIC_ORG",
+    "기타": "ETC",
+}
+
+PRODUCT_TYPE_MAP = {
+    "장학금": "SCHOLARSHIP",
+    "학자금": "LOAN",
+}
+
+SCHOLARSHIP_CATEGORY_MAP = {
+    "지역연고": "LOCAL",
+    "특기자": "SPECIALTY",
+    "성적우수": "GRADE",
+    "소득구분": "INCOME",
+    "장애인": "DISABILITY",
+    "기타": "ETC",
+}
 
 
 
@@ -190,6 +222,11 @@ def clean_raw_data(raw_data_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             if isinstance(value, str):
                 stripped_value = value.strip()
                 processed_row[key] = None if stripped_value in ['해당없음', ''] else stripped_value
+
+        # Enum 필드 변환
+        processed_row['운영기관구분'] = PROVIDER_TYPE_MAP.get(processed_row.get('운영기관구분'))
+        processed_row['상품구분'] = PRODUCT_TYPE_MAP.get(processed_row.get('상품구분'))
+        processed_row['학자금유형구분'] = SCHOLARSHIP_CATEGORY_MAP.get(processed_row.get('학자금유형구분'))
 
         # URL 정제
         processed_row['홈페이지 주소'] = clean_url(row.get('홈페이지 주소'))
