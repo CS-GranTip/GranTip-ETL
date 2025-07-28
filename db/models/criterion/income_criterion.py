@@ -1,5 +1,5 @@
 # db/models/criterion/income_criterion.py
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, TIMESTAMP, text
+from sqlalchemy import Column, BIGINT, Integer, String, Boolean, ForeignKey, TIMESTAMP, text
 from db.database import Base
 import json
 
@@ -7,8 +7,8 @@ class IncomeCriterion(Base):
     __tablename__ = "income_criterion"
     __table_args__ = {'extend_existing': True}  # 이 줄 추가!
     
-    id = Column(Integer, primary_key=True, index=True)
-    scholarship_id = Column(Integer, ForeignKey("scholarship.id"), comment="Scholarship ID(FK)")
+    id = Column(BIGINT, primary_key=True, index=True)
+    scholarship_id = Column(BIGINT, ForeignKey("scholarship.id"), comment="Scholarship ID(FK)")
     priority = Column(Integer, comment="규칙 적용 우선순위 (낮을수록 높음)")
     description = Column(String(500), nullable=True, comment="규칙에 대한 설명")
     aid_type = Column(String(100), nullable=True, comment="규칙이 적용되는 지원금 종류 (Enum 문자열로 저장)")

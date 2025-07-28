@@ -1,5 +1,5 @@
 # db/models/scholarship.py
-from sqlalchemy import Column, Integer, String, Date, Boolean, JSON, TIMESTAMP, text
+from sqlalchemy import Column, Integer, BIGINT, String, Date, Boolean, JSON, TIMESTAMP, text
 from sqlalchemy.orm import relationship
 from .university_category import scholarship_university_category_table
 from db.database import Base
@@ -8,8 +8,8 @@ class Scholarship(Base):
     __tablename__ = "scholarship"
     __table_args__ = {'extend_existing': True}  # 이 줄 추가!
     
-    id = Column(Integer, primary_key=True, index=True, comment="시스템 내부 고유 ID (PK)")
-    original_id = Column(Integer, unique=True, comment="운영기관이 제공한 원본 번호")
+    id = Column(BIGINT, primary_key=True, index=True, comment="시스템 내부 고유 ID (PK)")
+    original_id = Column(BIGINT, unique=True, comment="운영기관이 제공한 원본 번호")
     product_name = Column(String(255))
     provider_name = Column(String(255))
     provider_type = Column(String(100), comment="Enum 문자열로 저장")

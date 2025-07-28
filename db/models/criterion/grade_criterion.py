@@ -1,13 +1,13 @@
 # db/models/criterion/grade_criterion.py
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, TEXT, TIMESTAMP, text
+from sqlalchemy import Column, BIGINT, Integer, String, Float, ForeignKey, TEXT, TIMESTAMP, text
 from db.database import Base
 
 class GradeCriterion(Base):
     __tablename__ = "grade_criterion"
     __table_args__ = {'extend_existing': True}
     
-    id = Column(Integer, primary_key=True, index=True)
-    scholarship_id = Column(Integer, ForeignKey("scholarship.id"), comment="Scholarship ID(FK)")
+    id = Column(BIGINT, primary_key=True, index=True)
+    scholarship_id = Column(BIGINT, ForeignKey("scholarship.id"), comment="Scholarship ID(FK)")
     group = Column(String(100), comment="대상 그룹 (예: '신입생', '재학생')")
     type = Column(String(100), comment="기준 종류 (Enum 문자열로 저장)")
     
