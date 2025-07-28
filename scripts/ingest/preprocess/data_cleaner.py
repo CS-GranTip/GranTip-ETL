@@ -214,7 +214,7 @@ def clean_raw_data(raw_data_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         processed_row = row.copy()
 
         # 상품명과 운영기관명 결합
-        scholarship_name = f"[{row.get('운영기관명', '')}]{row.get('상품명', '')}"
+        scholarship_name = f"[{row.get('운영기관명', '')}] {row.get('상품명', '')}"
         processed_row['상품명'] = scholarship_name
 
         # 모든 필드에 대해 '해당없음' -> None 변환 & 양옆 공백 제거
