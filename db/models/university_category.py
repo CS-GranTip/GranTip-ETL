@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Table, ForeignKey
+from sqlalchemy import Column, Integer, String, Table, ForeignKey, TIMESTAMP, text
 from sqlalchemy.orm import relationship
 from db.database import Base
 
@@ -23,3 +23,6 @@ class UniversityCategory(Base):
         secondary="scholarship_university_category", # 중간 테이블 이름
         back_populates="university_categories"       # Scholarship 엔티티에 있는 필드 이름
     )
+
+    created_at = Column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
