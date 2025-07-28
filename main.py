@@ -10,6 +10,16 @@ from scripts.ingest.transform.transformer import transform_data
 from scripts.ingest.transform.validator import validate_scholarship_data
 from apscheduler.schedulers.blocking import BlockingScheduler
 
+from db.data_loader import load_to_db
+from db.database import engine, Base, SessionLocal
+from db.models.region import Region
+from db.models.university_category import UniversityCategory
+from scripts.seed.seed_regions import seed_db as seed_regions_db
+from scripts.seed.seed_university_categories import seed_categories as seed_categories_db
+from scripts.cache.cache_region_maps import create_cache_file as create_region_cache
+from scripts.cache.cache_university_categories import create_cache_file as create_category_cache
+
+
 # --- 프로젝트 루트 경로 설정 ---
 try:
     PROJECT_ROOT = Path(__file__).resolve().parent
@@ -23,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 # --- 상수 정의 ---
 REGION_CACHE_PATH = PROJECT_ROOT / "data" / "region_maps.json"
+CATEGORY_CACHE_PATH = PROJECT_ROOT / "data" / "university_category_maps.json"
 HASH_FILE_PATH = PROJECT_ROOT / "data" / "last_hash.txt"
 
 def load_region_maps_from_cache():
@@ -32,11 +43,7 @@ def load_region_maps_from_cache():
     logger.info(f"[Cache] 캐시 파일에서 지역 맵을 로드합니다: {REGION_CACHE_PATH}")
     try:
         with open(REGION_CACHE_PATH, 'r', encoding='utf-8') as f:
-            maps = json.load(f)
-
-            # JSON에서 id_to_region_map의 key는 문자열이므로, 다시 정수형으로 변환
-            #maps['id_to_region_map'] = {int(k): v for k, v in maps['id_to_region_map'].items()}
-            
+            maps = json.load(f)     
             logger.info("✅ 지역 맵 캐시 로드 완료.")
             return maps['sido_map'], maps['sigungus_map'], maps['eupmyeondong_map'], maps['id_to_region_map']
     except FileNotFoundError:
@@ -47,6 +54,24 @@ def load_region_maps_from_cache():
         logger.error(f"캐시 파일 로드 중 오류 발생: {e}")
         return None, None, None, None
     
+def load_category_map_from_cache():
+    """
+    미리 생성된 university_category_maps.json 캐시 파일에서 카테고리 맵을 로드합니다.
+    """
+    logger.info(f"[Cache] 캐시 파일에서 대학 구분 카테고리 맵을 로드합니다: {CATEGORY_CACHE_PATH}")
+    try:
+        with open(CATEGORY_CACHE_PATH, 'r', encoding='utf-8') as f:
+            maps = json.load(f)
+            logger.info("✅ 대학 구분 카테고리 맵 캐시 로드 완료.")
+            return maps['name_to_id_map']
+    except FileNotFoundError:
+        logger.error(f"캐시 파일을 찾을 수 없습니다: {CATEGORY_CACHE_PATH}")
+        logger.error("먼저 `cache_university_categories.py` 스크립트를 실행하여 캐시 파일을 생성해주세요.")
+        return None
+    except Exception as e:
+        logger.error(f"카테고리 맵 캐시 파일 로드 중 오류 발생: {e}")
+        return None
+        
 def validate_all_data(scholarships, all_grade_criteria, all_income_criteria, all_general_criteria, all_region_links, id_to_region_map):
     """
     변환된 모든 데이터를 순회하며 정합성을 검증하고, 유효한 데이터만 필터링합니다.
@@ -111,8 +136,49 @@ def validate_all_data(scholarships, all_grade_criteria, all_income_criteria, all
 
     return valid_scholarships, valid_grade_criteria, valid_income_criteria, valid_general_criteria, valid_region_links
 
+def initialize_dependencies():
+    """
+    ETL 파이프라인 실행에 필요한 모든 사전 준비 작업을 자동으로 수행합니다.
+    - DB 테이블 스키마 생성
+    - 초기 데이터 삽입 (seeding)
+    - 맵 캐시 파일 생성
+    """
+    logger.info("--- ETL 환경 자동 설정 시작 ---")
+    
+    # 모든 DB 테이블 스키마 생성 (존재하지 않을 경우)
+    logger.info("데이터베이스 테이블 스키마를 확인 및 생성합니다...")
+    Base.metadata.create_all(bind=engine)
+    
+    db = SessionLocal()
+    try:
+        # Region 데이터 확인 및 생성
+        if not db.query(Region).first():
+            logger.warning("Region 테이블이 비어있습니다. 데이터 초기화 및 캐싱을 시작합니다...")
+            seed_regions_db(db)
+            create_region_cache()
+        else:
+            logger.info("Region 데이터가 이미 존재합니다.")
+            # DB에 데이터는 있는데 캐시 파일만 없을 경우, 캐시만 재생성
+            if not REGION_CACHE_PATH.exists():
+                logger.warning("Region 캐시 파일이 없습니다. 캐시를 재생성합니다...")
+                create_region_cache()
 
-def run_pipeline(sido_map, sigungus_map, eupmyeondongs_map, id_to_region_map):
+        # UniversityCategory 데이터 확인 및 생성
+        if not db.query(UniversityCategory).first():
+            logger.warning("UniversityCategory 테이블이 비어있습니다. 데이터 초기화 및 캐싱을 시작합니다...")
+            seed_categories_db(db)
+            create_category_cache()
+        else:
+            logger.info("UniversityCategory 데이터가 이미 존재합니다.")
+            if not CATEGORY_CACHE_PATH.exists():
+                logger.warning("UniversityCategory 캐시 파일이 없습니다. 캐시를 재생성합니다...")
+                create_category_cache()
+    finally:
+        db.close()
+
+    logger.info("--- ETL 환경 자동 설정 완료 ---")
+
+def run_pipeline(category_id_map, sido_map, sigungus_map, eupmyeondongs_map, id_to_region_map):
     """전체 데이터 처리 파이프라인을 실행합니다."""
     print("데이터 처리 파이프라인을 시작합니다.")
 
@@ -134,6 +200,7 @@ def run_pipeline(sido_map, sigungus_map, eupmyeondongs_map, id_to_region_map):
     logger.info("[Step 3] 정제된 데이터를 Pydantic 객체로 변환합니다...")
     scholarships, grade_criteria, income_criteria, general_criteria, region_links = transform_data(
         cleaned_data=cleaned_data,
+        category_id_map=category_id_map,
         sido_map=sido_map,
         all_sigungus_map=sigungus_map,
         all_eupmyeondongs_map=eupmyeondongs_map,
@@ -226,30 +293,33 @@ def run_scheduled_job():
 
 
 if __name__ == "__main__":
+
+    initialize_dependencies()
+
     # 캐시 파일에서 지역 정보를 미리 로드
     REGION_SIDO_MAP, REGION_SIGUNGUS_MAP, RESION_EUPMYEONDONG_MAP, REGION_ID_MAP = load_region_maps_from_cache()
-    
-    """
-    if not REGION_ID_MAP:
-        logger.error("지역 정보 캐시 로드에 실패하여 프로그램을 종료합니다.")
-    else:
-        # 스케줄러 설정
-        scheduler = BlockingScheduler(timezone='Asia/Seoul')
-        
-        # 매일 새벽 4시에 run_scheduled_job 함수 실행
-        scheduler.add_job(run_scheduled_job, 'cron', hour=4, minute=0)
-        
-        logger.info("스케줄러가 설정되었습니다. 매일 새벽 4시에 업데이트를 확인합니다.")
-        
-        # 프로그램 시작 시 1회 즉시 실행
-        run_scheduled_job()
+    CATEGORY_ID_MAP = load_category_map_from_cache()
 
-        try:
-            # 스케줄러 시작
-            scheduler.start()
-        except (KeyboardInterrupt, SystemExit):
-            logger.info("스케줄러를 종료합니다.")
-            scheduler.shutdown()
+    if not REGION_ID_MAP and CATEGORY_ID_MAP:
+        logger.error("지역 또는 대학 구분 카테고리 정보 캐시 로드에 실패하여 프로그램을 종료합니다.")
+
     """
-    if REGION_ID_MAP:
-        run_pipeline(REGION_SIDO_MAP, REGION_SIGUNGUS_MAP, RESION_EUPMYEONDONG_MAP, REGION_ID_MAP)
+    # 스케줄러 설정
+    scheduler = BlockingScheduler(timezone='Asia/Seoul')
+        
+    # 매일 새벽 4시에 run_scheduled_job 함수 실행
+    scheduler.add_job(run_scheduled_job, 'cron', hour=4, minute=0)
+        
+    logger.info("스케줄러가 설정되었습니다. 매일 새벽 4시에 업데이트를 확인합니다.")
+        
+    # 프로그램 시작 시 1회 즉시 실행
+    run_scheduled_job()
+
+    try:
+        # 스케줄러 시작
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("스케줄러를 종료합니다.")
+        scheduler.shutdown()
+    """
+    run_pipeline(CATEGORY_ID_MAP, REGION_SIDO_MAP, REGION_SIGUNGUS_MAP, RESION_EUPMYEONDONG_MAP, REGION_ID_MAP)

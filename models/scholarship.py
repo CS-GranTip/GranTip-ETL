@@ -28,7 +28,7 @@ class Scholarship(BaseModel):
     homepage_url:           Optional[HttpUrl] = Field(None, alias="홈페이지 주소")
 
     # --- 가공된 분류 목록 ---
-    university_category: List[str] = Field(default_factory=list, description="대학 구분")
+    university_category_ids: List[int] = Field(default_factory=list,  description="대학 구분 카테고리 ID 리스트")
     grade_category:      List[str] = Field(default_factory=list, description="학년 구분")
     department_category: List[str] = Field(default_factory=list, description="학과 구분")
 

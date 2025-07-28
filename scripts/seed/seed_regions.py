@@ -2,6 +2,7 @@ import json
 import sys
 from pathlib import Path
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 # 프로젝트 루트 경로를 시스템 경로에 추가하여 db 모듈을 찾을 수 있도록 함
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -16,9 +17,12 @@ REGIONS_JSON_PATH = PROJECT_ROOT / "data" / "regions.json"
 REGION_MAPS_JSON_PATH = PROJECT_ROOT / "data" / "region_maps.json"
 DB_FILE_PATH = PROJECT_ROOT / "region.db"
 
-def seed_db():
+def seed_db(db: Session):
     """regions.json과 region_maps.json 파일을 읽어 Region 테이블을 채웁니다."""
-    db = SessionLocal()
+
+    print("Region 테이블 스키마를 확인 및 생성합니다...")
+    Base.metadata.create_all(bind=engine)
+
     try:
         print("기존 데이터를 삭제합니다.")
         db.execute(text("SET FOREIGN_KEY_CHECKS = 0;"))

@@ -6,31 +6,59 @@ from typing import List, Optional, Tuple, Dict, Any
 
 def parse_university_category(text: Optional[str]) -> List[str]:
     """
-    '대학구분' 필드의 붙어있는 문자열을 리스트로 분리
-    (예: '4년제(5~6년제포함)전문대(2~3년제)' -> ['4년제(5~6년제포함)', '전문대(2~3년제)'])
+    '대학구분' 필드를 정렬 및 이스케이프 처리된 키워드와 재귀 로직을 이용해
+    정확하게 분리하는 최종 버전입니다.
     """
     if not text:
         return []
-    
-    patterns = [
-        # 1순위
-        r'4년제\(5~6년제포함\)',
-        r'전문대\(2~3년제\)',
-        r'학점은행제 대학',
 
-        # 2순위
-        r'\w+대학원',  # '일반대학원', '전문대학원' 등
-        r'\w+대학',   # '기술대학', '원격대학', '해외대학' 등
-
-        # 3순위
-        '제한없음'
+    # 1. 분리에 사용할 모든 키워드를 정의합니다.
+    keywords = [
+        '4년제(5~6년제포함)', '전문대(2~3년제)', '학점은행제 대학', '일반대학원',
+        '전문대학원', '기술대학', '원격대학', '해외대학', '특정대학', '제한없음'
     ]
 
-    # 패턴들을 OR('|')로 연결하여 하나의 마스터 패턴 생성
-    master_pattern = '|'.join(patterns)
+    # 2. ★★★★★ 핵심 수정사항 ★★★★★
+    # 키워드를 길이순으로 내림차순 정렬하고, 각 키워드의 특수 문자를 이스케이프 처리합니다.
+    keywords.sort(key=len, reverse=True)
+    escaped_keywords = [re.escape(k) for k in keywords]
+    master_pattern = '|'.join(escaped_keywords)
+    
+    # -------------------------------------------------------------
 
-    # 마스터 패턴과 일치하는 모든 부분 리스트로 반환
-    return re.findall(master_pattern, text)
+    # 내부 재귀 함수 정의
+    memo = {} # 중복 계산을 피하기 위한 메모이제이션
+    def _recursive_parse(sub_text: str) -> Optional[List[str]]:
+        if not sub_text:
+            return []
+        
+        # 이미 계산한 결과가 있으면 즉시 반환
+        if sub_text in memo:
+            return memo[sub_text]
+
+        # 현재 문자열의 시작 부분과 일치하는 가장 긴 키워드를 찾음
+        match = re.match(r'(' + master_pattern + ')', sub_text)
+        
+        if match:
+            token = match.group(1)
+            # 매칭된 토큰은 원래의 키워드여야 하므로, 이스케이프되지 않은 버전을 찾습니다.
+            # 이 부분은 re.match가 반환하는 값은 원본 문자열이므로, 추가 변환이 필요 없습니다.
+            
+            remaining_text = sub_text[len(token):]
+            remaining_result = _recursive_parse(remaining_text)
+
+            if remaining_result is not None:
+                # 성공 경로를 메모이제이션하고 결과 반환
+                memo[sub_text] = [token] + remaining_result
+                return memo[sub_text]
+        
+        # 실패 경로를 메모이제이션
+        memo[sub_text] = None
+        return None
+
+    # 메인 함수 로직
+    result = _recursive_parse(text.strip())
+    return result if result is not None else [text]
 
 def parse_grade_category(text: Optional[str]) -> List[str]:
     """

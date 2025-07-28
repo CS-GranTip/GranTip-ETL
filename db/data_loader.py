@@ -1,4 +1,4 @@
-# db/data_loader.py (보완된 버전)
+# db/data_loader.py 
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))  # 프로젝트 루트 (GranTip-ETL) 추가
@@ -11,7 +11,8 @@ from db.models.criterion.grade_criterion import GradeCriterion as GradeCriterion
 from db.models.criterion.income_criterion import IncomeCriterion as IncomeCriterionDBModel
 from db.models.criterion.general_criterion import GeneralCriterion as GeneralCriterionDBModel
 from db.models.scholarship_region import ScholarshipRegion as ScholarshipRegionDBModel
-from db.models.region import Region  # Region 모델 추가 (유효성 검증용)
+from db.models.region import Region
+from db.models.university_category import UniversityCategory as CategoryDBModel
 from models.scholarship import Scholarship
 from models.criterion.grade_criterion import GradeCriterion
 from models.criterion.income_criterion import IncomeCriterion
@@ -32,28 +33,32 @@ def load_to_db(valid_data: Dict[str, List]):
 
         id_map = {}  # original_id -> db_id 매핑
         for s in valid_data["scholarships"]:
-            s_dict = s.model_dump(exclude_unset=True)
-            try:
-                s_dict["university_category"] = json.dumps(s_dict.get("university_category", []))
-                s_dict["grade_category"] = json.dumps(s_dict.get("grade_category", []))
-                s_dict["department_category"] = json.dumps(s_dict.get("department_category", []))
-                s_dict["recipients_by_category"] = json.dumps(s_dict.get("recipients_by_category", {}))
-                s_dict["qualification_tags"] = json.dumps(s_dict.get("qualification_tags", []))
-            except (TypeError, ValueError) as e:
-                print(f"JSON 변환 오류 (Scholarship {s.original_id}): {e}")
-                continue  # 오류 시 스킵
-
+            category_ids = s.university_category_ids
+            s_dict = s.model_dump(
+                exclude={"university_category_ids"}, 
+                exclude_unset=True
+            )
+                
             db_s = db.query(ScholarshipDBModel).filter(ScholarshipDBModel.original_id == s.original_id).first()
-            if db_s:
+            if db_s: # 업데이트
                 for key, value in s_dict.items():
                     setattr(db_s, key, value)
-                db_id = db_s.id
-            else:
+            else: # 새로 생성
                 db_s = ScholarshipDBModel(**s_dict)
                 db.add(db_s)
-                db.flush()
-                db_id = db_s.id
-            id_map[s.original_id] = db_id
+            
+            # 다대다(Many-to-Many) 관계 설정
+            if category_ids:
+                # ID 리스트를 사용하여 실제 UniversityCategory 객체들을 DB에서 조회
+                categories_to_link = db.query(CategoryDBModel).filter(CategoryDBModel.id.in_(category_ids)).all()
+                # 조회된 객체들을 Scholarship 엔티티의 관계 필드에 할당
+                db_s.university_categories = categories_to_link
+            else:
+                # 연결할 카테고리가 없으면 빈 리스트로 초기화
+                db_s.university_categories = []
+
+            db.flush()
+            id_map[s.original_id] = db_s.id
 
         # Criteria 처리: 각 유형별로 기존 레코드 삭제 후 재삽입 (다중 레코드 지원)
         for key, model_class, pydantic_model in [
