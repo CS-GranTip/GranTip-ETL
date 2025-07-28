@@ -1,7 +1,8 @@
 # db/models/scholarship.py
-from sqlalchemy import Column, Integer, String, Date, Boolean
+from sqlalchemy import Column, Integer, String, Date, Boolean, JSON
+from sqlalchemy.orm import relationship
+from .university_category import scholarship_university_category_table
 from db.database import Base
-import json
 
 class Scholarship(Base):
     __tablename__ = "scholarship"
@@ -17,11 +18,15 @@ class Scholarship(Base):
     application_start_date = Column(Date)
     application_end_date = Column(Date)
     homepage_url = Column(String(500), nullable=True)
-    university_category = Column(String(500), comment="대학 구분 (JSON 문자열로 저장)")
-    grade_category = Column(String(500), comment="학년 구분 (JSON 문자열로 저장)")
-    department_category = Column(String(500), comment="학과 구분 (JSON 문자열로 저장)")
+    university_categories = relationship(
+        "UniversityCategory",
+        secondary=scholarship_university_category_table,
+        back_populates="scholarships"
+    )
+    grade_category = Column(JSON, comment="학년 구분 (JSON으로 저장)")
+    department_category = Column(JSON, comment="학과 구분 (JSON으로 저장)")
     num_of_recipients_total = Column(Integer, nullable=True, comment="총 선발 인원")
-    recipients_by_category = Column(String(500), nullable=True, comment="구분별 선발 인원 (JSON 문자열로 저장)")
+    recipients_by_category = Column(JSON, nullable=True, comment="구분별 선발 인원 (JSON으로 저장)")
     is_recommendation_required = Column(Boolean, comment="추천서 필요 여부")
     is_duplicate_support_restricted = Column(Boolean, comment="중복 수혜 제한 여부")
     qualification_tags = Column(String(500), comment="자격 키워드 태그 (JSON 문자열로 저장)")
