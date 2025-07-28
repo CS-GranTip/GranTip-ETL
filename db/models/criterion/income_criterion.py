@@ -1,5 +1,5 @@
 # db/models/criterion/income_criterion.py
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, TIMESTAMP, text
 from db.database import Base
 import json
 
@@ -21,3 +21,6 @@ class IncomeCriterion(Base):
     scholarship_support_interval = Column(Integer, nullable=True, comment="한국장학재단 학자금 지원구간 (n구간 이하)")
     income_percentile_band = Column(Integer, nullable=True, comment="소득분위 (n분위 이내)")
     median_income_ratio = Column(Integer, nullable=True, comment="기준 중위소득 비율 (n% 이하)")
+
+    created_at = Column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))

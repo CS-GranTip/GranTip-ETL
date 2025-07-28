@@ -1,5 +1,5 @@
 # db/models/scholarship.py
-from sqlalchemy import Column, Integer, String, Date, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Date, Boolean, JSON, TIMESTAMP, text
 from sqlalchemy.orm import relationship
 from .university_category import scholarship_university_category_table
 from db.database import Base
@@ -29,7 +29,6 @@ class Scholarship(Base):
     recipients_by_category = Column(JSON, nullable=True, comment="구분별 선발 인원 (JSON으로 저장)")
     is_recommendation_required = Column(Boolean, comment="추천서 필요 여부")
     is_duplicate_support_restricted = Column(Boolean, comment="중복 수혜 제한 여부")
-    qualification_tags = Column(String(500), comment="자격 키워드 태그 (JSON 문자열로 저장)")
     grade_criteria_detail = Column(String(500), nullable=True)
     income_criteria_detail = Column(String(500), nullable=True)
     support_detail = Column(String(500), nullable=True)
@@ -50,3 +49,6 @@ class Scholarship(Base):
     qualification_restriction_notes = Column(String(500), nullable=True)
     recommendation_needed_notes = Column(String(500), nullable=True)
     required_documents_notes = Column(String(500), nullable=True)
+
+    created_at = Column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
