@@ -154,10 +154,10 @@ def crawl_suwon_scholarships_to_json(base_url: str, pickle_file: str = 'suwon_li
             "성적기준 상세내용": details,
             "소득기준 상세내용": details,
             "운영기관구분": ProviderType.LOCAL_GOV.value,  # 논산시청은 지자체
-            "운영기관명": "논산시청",
+            "운영기관명": "수원시청",
             "자격제한 상세내용": "※ 자세한 사항은 기관 홈페이지 참조",
             "제출서류 상세내용": "※ 자세한 사항은 기관 홈페이지 참조",
-            "지역거주여부 상세내용": "논산시",
+            "지역거주여부 상세내용": "수원시",
             "지원내역 상세내용": support_detail,
             "추천필요여부 상세내용": "해당없음",
             "특정자격 상세내용": "해당없음",

@@ -20,12 +20,16 @@ from scripts.cache.cache_university_categories import create_cache_file as creat
 
 from scripts.ingest.crawler.seoul_crawl import crawl_seoul_scholarships_to_json
 from scripts.ingest.crawler.suwon_crawl import crawl_suwon_scholarships_to_json
+from scripts.ingest.crawler.nonsan_crawl import crawl_nonsan_scholarships_to_json
+from scripts.ingest.crawler.dreamspon_crawl import crawl_dreamspon_scholarships_to_json
 from db.data_loader import load_to_db
 from scripts.cache.cache_region_maps import create_cache_file as create_region_cache
 from scripts.cache.cache_university_categories import create_cache_file as create_category_cache
 from db.database import engine, Base, SessionLocal
 from db.models.region import Region
 from db.models.university_category import UniversityCategory
+
+import asyncio
 
 # --- 프로젝트 루트 경로 설정 ---
 try:
@@ -171,10 +175,15 @@ def run_pipeline(category_id_map, sido_map, sigungus_map, eupmyeondongs_map, id_
     logger.info("[Step 1] 서울장학재단 웹사이트로부터 데이터를 크롤링합니다...")
     seoul_base_url = "https://www.hissf.or.kr/home/kor/M821806781/scholarship/business/index.do"
     seoul_list_url = "https://www.hissf.or.kr/home/kor/M821806781/scholarship/business/view.do"
+    dream_base_url = "https://www.dreamspon.com"
+    dream_list_url = "/scholarship/list.html?&sch_type=all&sch_key=대학생"
+    nonsan_base_url = "https://nonsan.go.kr/kor/html/sub03/030101.html?skey=title&sval=%EC%9E%A5%ED%95%99%ED%9A%8C&page_size=10"
     suwon_base_url = "https://suwon4u.or.kr/?p=21&page=2&page=1"
     raw_data = []
-    raw_data.extend(crawl_seoul_scholarships_to_json(seoul_base_url, seoul_list_url))
-    raw_data.extend(crawl_suwon_scholarships_to_json(suwon_base_url))
+    #raw_data.extend(crawl_seoul_scholarships_to_json(seoul_base_url, seoul_list_url))
+    raw_data.extend(asyncio.run(crawl_dreamspon_scholarships_to_json(dream_base_url, dream_list_url)))
+    #raw_data.extend(crawl_suwon_scholarships_to_json(suwon_base_url))
+    #raw_data.extend(crawl_nonsan_scholarships_to_json(nonsan_base_url))
 
     if not raw_data:
         logger.warning("수집된 데이터가 없어 파이프라인을 종료합니다.")
