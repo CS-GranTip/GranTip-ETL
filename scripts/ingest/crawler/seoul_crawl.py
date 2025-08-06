@@ -134,6 +134,7 @@ def crawl_seoul_scholarships_to_json(base_url: str, list_url: str, pickle_file: 
                     try:
                         detail_locator = page.locator('#cmmnForm > div.page_list.ann_view > ul > li:nth-child(3) > div > div')
                         details = detail_locator.inner_text().strip() if detail_locator.count() > 0 else "해당없음"
+                        details = details.replace('-', '○')
                     except Exception as e:
                         details = "해당없음"
                         logger.warning(f"지원 내용 추출 실패: {e}")
