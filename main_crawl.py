@@ -4,11 +4,10 @@ import logging
 import hashlib
 from pathlib import Path
 
-from scripts.ingest.openapi_collector import collect_all_data, collect_data
+from scripts.ingest.openapi_collector import collect_data
 from scripts.ingest.preprocess.data_cleaner import clean_raw_data
 from scripts.ingest.transform.transformer import transform_data
 from scripts.ingest.transform.validator import validate_scholarship_data
-from apscheduler.schedulers.blocking import BlockingScheduler
 
 from db.data_loader import load_to_db
 from db.database import engine, Base, SessionLocal
@@ -21,6 +20,12 @@ from scripts.cache.cache_university_categories import create_cache_file as creat
 
 from scripts.ingest.crawler.seoul_crawl import crawl_seoul_scholarships_to_json
 from scripts.ingest.crawler.suwon_crawl import crawl_suwon_scholarships_to_json
+from db.data_loader import load_to_db
+from scripts.cache.cache_region_maps import create_cache_file as create_region_cache
+from scripts.cache.cache_university_categories import create_cache_file as create_category_cache
+from db.database import engine, Base, SessionLocal
+from db.models.region import Region
+from db.models.university_category import UniversityCategory
 
 # --- 프로젝트 루트 경로 설정 ---
 try:
@@ -38,10 +43,9 @@ REGION_CACHE_PATH = PROJECT_ROOT / "data" / "region_maps.json"
 CATEGORY_CACHE_PATH = PROJECT_ROOT / "data" / "university_category_maps.json"
 HASH_FILE_PATH = PROJECT_ROOT / "data" / "last_hash.txt"
 
+
+
 def load_region_maps_from_cache():
-    """
-    미리 생성된 region_maps.json 캐시 파일에서 지역 맵을 로드합니다.
-    """
     logger.info(f"[Cache] 캐시 파일에서 지역 맵을 로드합니다: {REGION_CACHE_PATH}")
     try:
         with open(REGION_CACHE_PATH, 'r', encoding='utf-8') as f:
@@ -49,9 +53,9 @@ def load_region_maps_from_cache():
             logger.info("✅ 지역 맵 캐시 로드 완료.")
             return maps['sido_map'], maps['sigungus_map'], maps['eupmyeondong_map'], maps['id_to_region_map']
     except FileNotFoundError:
-        logger.error(f"캐시 파일을 찾을 수 없습니다: {REGION_CACHE_PATH}")
-        logger.error("먼저 `cache_region_maps.py` 스크립트를 실행하여 캐시 파일을 생성해주세요.")
-        return None, None, None, None
+        logger.warning("Region 캐시 파일이 없어 재생성합니다...")
+        create_region_cache()
+        return load_region_maps_from_cache()
     except Exception as e:
         logger.error(f"캐시 파일 로드 중 오류 발생: {e}")
         return None, None, None, None
@@ -75,9 +79,6 @@ def load_category_map_from_cache():
         return None
         
 def validate_all_data(scholarships, all_grade_criteria, all_income_criteria, all_general_criteria, all_region_links, id_to_region_map):
-    """
-    변환된 모든 데이터를 순회하며 정합성을 검증하고, 유효한 데이터만 필터링합니다.
-    """
     logger.info("[Step 4] Validator를 사용하여 데이터 정합성 검증 중...")
     valid_scholarships = []
     valid_grade_criteria = []
@@ -85,56 +86,38 @@ def validate_all_data(scholarships, all_grade_criteria, all_income_criteria, all
     valid_general_criteria = []
     valid_region_links = []
 
-    # 각 기준 데이터를 scholarship_id를 기준으로 그룹화
     grouped_grades = {}
     for item in all_grade_criteria:
-        if item.scholarship_id not in grouped_grades:
-            grouped_grades[item.scholarship_id] = []
-        grouped_grades[item.scholarship_id].append(item)
+        grouped_grades.setdefault(item.scholarship_id, []).append(item)
 
     grouped_incomes = {}
     for item in all_income_criteria:
-        if item.scholarship_id not in grouped_incomes:
-            grouped_incomes[item.scholarship_id] = []
-        grouped_incomes[item.scholarship_id].append(item)
+        grouped_incomes.setdefault(item.scholarship_id, []).append(item)
 
     grouped_generals = {}
     for item in all_general_criteria:
-        if item.scholarship_id not in grouped_generals:
-            grouped_generals[item.scholarship_id] = []
-        grouped_generals[item.scholarship_id].append(item)
-    
+        grouped_generals.setdefault(item.scholarship_id, []).append(item)
+
     grouped_regions = {}
     for link in all_region_links:
-        if link.scholarship_id not in grouped_regions:
-            grouped_regions[link.scholarship_id] = []
-        grouped_regions[link.scholarship_id].append(link)
+        grouped_regions.setdefault(link.scholarship_id, []).append(link)
 
     for s in scholarships:
-        temp_s_id = s.original_id # DB 저장 전이므로 original_id를 임시 키로 사용
-
-        related_grades = grouped_grades.get(temp_s_id, [])
-        related_incomes = grouped_incomes.get(temp_s_id, [])
-        related_generals = grouped_generals.get(temp_s_id, [])
-        related_regions = grouped_regions.get(temp_s_id, [])
-        
+        sid = s.original_id
         is_valid = validate_scholarship_data(
             scholarship=s,
-            grade_criteria=related_grades,
-            income_criteria=related_incomes,
-            general_criteria=related_generals,
-            scholarship_regions=related_regions,
+            grade_criteria=grouped_grades.get(sid, []),
+            income_criteria=grouped_incomes.get(sid, []),
+            general_criteria=grouped_generals.get(sid, []),
+            scholarship_regions=grouped_regions.get(sid, []),
             id_to_region_map=id_to_region_map
         )
-
         if is_valid:
             valid_scholarships.append(s)
-            if temp_s_id in grouped_grades: valid_grade_criteria.extend(grouped_grades[temp_s_id])
-            if temp_s_id in grouped_incomes: valid_income_criteria.extend(grouped_incomes[temp_s_id])
-            if temp_s_id in grouped_generals: valid_general_criteria.extend(grouped_generals[temp_s_id])
-            if temp_s_id in grouped_regions: valid_region_links.extend(grouped_regions[temp_s_id])
-        #else:
-            #logger.warning(f"  - 검증 실패: Scholarship Original ID: {s.original_id}, Name: {s.product_name}")
+            valid_grade_criteria.extend(grouped_grades.get(sid, []))
+            valid_income_criteria.extend(grouped_incomes.get(sid, []))
+            valid_general_criteria.extend(grouped_generals.get(sid, []))
+            valid_region_links.extend(grouped_regions.get(sid, []))
 
     return valid_scholarships, valid_grade_criteria, valid_income_criteria, valid_general_criteria, valid_region_links
 
@@ -149,7 +132,7 @@ def initialize_dependencies():
     
     # 모든 DB 테이블 스키마 생성 (존재하지 않을 경우)
     logger.info("데이터베이스 테이블 스키마를 확인 및 생성합니다...")
-    Base.metadata.drop_all(engine)
+    #Base.metadata.drop_all(engine)
     Base.metadata.create_all(bind=engine)
     
     db = SessionLocal()
@@ -185,7 +168,6 @@ def run_pipeline(category_id_map, sido_map, sigungus_map, eupmyeondongs_map, id_
     """전체 데이터 처리 파이프라인을 실행합니다."""
     print("데이터 처리 파이프라인을 시작합니다.")
 
-    # 1. 데이터 수집 (크롤링)
     logger.info("[Step 1] 서울장학재단 웹사이트로부터 데이터를 크롤링합니다...")
     seoul_base_url = "https://www.hissf.or.kr/home/kor/M821806781/scholarship/business/index.do"
     seoul_list_url = "https://www.hissf.or.kr/home/kor/M821806781/scholarship/business/view.do"
@@ -195,18 +177,16 @@ def run_pipeline(category_id_map, sido_map, sigungus_map, eupmyeondongs_map, id_
     raw_data.extend(crawl_suwon_scholarships_to_json(suwon_base_url))
 
     if not raw_data:
-        logger.info("수집된 데이터가 없어 파이프라인을 종료합니다.")
+        logger.warning("수집된 데이터가 없어 파이프라인을 종료합니다.")
         return
     logger.info(f"✅ 총 {len(raw_data)}건의 원본 데이터 수집 완료")
 
-    # 2. 데이터 정제
     logger.info("[Step 2] 수집된 데이터의 정제를 시작합니다...")
     cleaned_data = clean_raw_data(raw_data)
     logger.info(f"✅ 총 {len(cleaned_data)}건의 데이터 정제 완료")
 
-    # 3. 데이터 변환
     logger.info("[Step 3] 정제된 데이터를 Pydantic 객체로 변환합니다...")
-    scholarships, grade_criteria, income_criteria, general_criteria, region_links = transform_data(
+    scholarships, grades, incomes, generals, regions = transform_data(
         cleaned_data=cleaned_data,
         category_id_map=category_id_map,
         sido_map=sido_map,
@@ -216,31 +196,21 @@ def run_pipeline(category_id_map, sido_map, sigungus_map, eupmyeondongs_map, id_
     )
     logger.info(f"✅ 총 {len(scholarships)}개의 장학금 객체 변환 완료")
 
-    # 4. 데이터 검증
-    valid_data_tuple = validate_all_data(
-        scholarships, grade_criteria, income_criteria, general_criteria, region_links, id_to_region_map
+    v_scholarships, v_grades, v_incomes, v_generals, v_regions = validate_all_data(
+        scholarships, grades, incomes, generals, regions, id_to_region_map
     )
-    valid_scholarships = valid_data_tuple[0]
-    logger.info(f"✅ 총 {len(valid_scholarships)}개의 장학금 데이터가 최종 정합성 검증을 통과했습니다.")
+    logger.info(f"✅ 총 {len(v_scholarships)}개의 유효한 장학금 데이터가 최종 정합성 검증을 통과했습니다.")
 
-    # 5. DB 저장
-    if valid_scholarships:
+    if v_scholarships:
         logger.info("[Step 5] 유효한 데이터를 데이터베이스에 저장합니다.")
-        # --- DB 저장 로직 ---
-        from db.data_loader import load_to_db
-        v_scholarships, v_grades, v_incomes, v_generals, v_regions = valid_data_tuple
-        
-        # 딕셔너리 생성
-        data_to_load = {
+        load_to_db({
             "scholarships": v_scholarships,
             "grades": v_grades,
             "incomes": v_incomes,
             "generals": v_generals,
             "regions": v_regions
-        }
-
-        load_to_db(data_to_load)
-        logger.info(f"✅ {len(valid_scholarships)}개의 유효한 장학금 데이터 저장 완료")
+        })
+        logger.info(f"✅ {len(v_scholarships)}개의 장학금 데이터 저장 완료")
     else:
         logger.info("저장할 유효한 데이터가 없습니다.")
 

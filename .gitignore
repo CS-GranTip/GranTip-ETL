@@ -28,3 +28,7 @@ scripts/ingest/transform/personeltest.py
 
 # 환경 변수 파일
 .env
+
+# 장학금 크롤링 캐시
+*.pkl
+

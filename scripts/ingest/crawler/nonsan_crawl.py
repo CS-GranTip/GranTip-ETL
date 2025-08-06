@@ -6,6 +6,7 @@ import pickle
 import logging
 from datetime import date
 from enum import Enum
+from typing import List, Dict
 
 class ProviderType(str, Enum):
     LOCAL_GOV = "지자체(출자출연기관)"
@@ -20,7 +21,7 @@ class ProductType(str, Enum):
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def crawl_nonsan_scholarships_to_json(base_url: str, pickle_file: str = 'nonsan_links.pkl', timeout: int = 5) -> list[dict]:
+def crawl_nonsan_scholarships_to_json(base_url: str, pickle_file: str = 'nonsan_links.pkl', timeout: int = 5) -> List[Dict]:
     """
     논산시청 장학금 공지 페이지를 크롤링하여 OpenAPI 형식(JSON)으로 변환합니다.
     
@@ -179,7 +180,7 @@ def crawl_nonsan_scholarships_to_json(base_url: str, pickle_file: str = 'nonsan_
 
             # OpenAPI 형식 딕셔너리 생성
             item = {
-                "연번": i + 1,
+                "번호": i + 1,
                 "대학구분": "4년제(5~6년제포함)",  # 논산시청 장학금은 대학 대상으로 가정
                 "모집시작일": start_date,
                 "모집종료일": end_date,
